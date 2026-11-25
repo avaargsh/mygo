@@ -47,7 +47,7 @@ func TestInstalledFlowFixture(t *testing.T) {
 				w.WriteHeader(400)
 				return
 			}
-			body := marker + "\n"
+			body := marker
 			if _, ok := req["track_total_hits"]; ok {
 				fmt.Fprintf(w, `{"hits":{"total":{"value":1,"relation":"eq"},"hits":[{"_index":%q,"_source":{"ax_path":"mygo-xerj-fixture.txt","body":%q}}]}}`, index, body)
 			} else {

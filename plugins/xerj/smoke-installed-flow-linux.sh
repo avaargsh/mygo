@@ -65,5 +65,6 @@ for payload in '{"size":8,"track_total_hits":true,"query":{"match_all":{}}}' '{"
 done
 printf 'Synthetic count response: '
 curl -sS --max-time 5 -H 'Content-Type: application/json' -X POST "$endpoint/mygoslugprobe-docs/_count" --data '{"query":{"match_all":{}}}' | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin),ensure_ascii=True))'
-MYGO_XERJ_ACCEPTANCE=1 MYGO_XERJ_ENDPOINT="$endpoint" MYGO_XERJ_BINARY="$out/xerj" MYGO_XERJ_SHA256="$digest" MYGO_XERJ_DATASET_SUFFIX=docs \
-  go test -race -count=1 -timeout=10m -run '^TestLiveInstalledFlow$' -v ./plugins/xerj
+MYGO_XERJ_ACCEPTANCE=1 MYGO_XERJ_NORMALIZED_PROBE=1 MYGO_XERJ_ENDPOINT="$endpoint" MYGO_XERJ_BINARY="$out/xerj" MYGO_XERJ_SHA256="$digest" MYGO_XERJ_DATASET_SUFFIX=docs \
+  go test -race -count=1 -timeout=10m -run '^Test(LiveInstalledFlow|LiveInstalledNormalizedBytesRejected|VerifierRC103FileAndSection) -v ./plugins/xerj
+ -v ./plugins/xerj
