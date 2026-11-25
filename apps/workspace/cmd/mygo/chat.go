@@ -74,13 +74,26 @@ func (s *shell) renderChat(c *ui.Context, snapshot core.WorkspaceSnapshot, paneI
 	state := ch.chat.Snapshot()
 	ui.Text(c, "Model chat").Bold()
 	if ch.boundEndpoint == "" {
-		ui.TextInput(c, &ch.endpoint).Label("Chat completions endpoint").Placeholder("https://host/v1/chat/completions")
-		ui.TextInput(c, &ch.modelName).Label("Model name")
+		ui.TextInput(c.Key("chat-endpoint"), &ch.endpoint).Label("Chat completions endpoint").Placeholder("https://host/v1/chat/completions")
+		ui.TextInput(c.Key("chat-model"), &ch.modelName).Label("Model name")
 	} else {
 		ui.Text(c, "Endpoint: "+ch.boundEndpoint)
 		ui.Text(c, "Model: "+ch.boundModel)
 	}
 	ui.Text(c, "Send transmits your prompt and completed chat history to the selected model. No other workspace content is included. This conversation is not saved.")
+	// Keep the composer above the flexible history so it stays reachable in a split pane.
+	if state.Active {
+		c.After(100 * time.Millisecond)
+		ui.Text(c, "Generation active")
+		ui.Button(c, "Stop generation").OnClick(func() { ch.chat.Cancel() })
+	} else {
+		ui.TextInput(c.Key("chat-credential"), &ch.apiKey).Password().MaxLength(8192).Label("API key (optional; cleared on send)")
+		ui.TextArea(c.Key("chat-message"), &ch.draft).Label("Message").Height(72).MaxLength(8192)
+		ui.Row(c).Gap(spaceControl).Children(func() {
+			ui.Button(c, "Send message").Disabled(strings.TrimSpace(ch.draft) == "").OnClick(func() { s.sendChat(ch) })
+			ui.Button(c, "Clear conversation").Disabled(len(state.Turns) == 0).OnClick(func() { s.clearChat(ch) })
+		})
+	}
 	ui.Scroll(c).Grow(1).MinHeight(0).Children(func() {
 		ui.Column(c).Gap(spaceSection).Children(func() {
 			for i, turn := range state.Turns {
@@ -101,18 +114,6 @@ func (s *shell) renderChat(c *ui.Context, snapshot core.WorkspaceSnapshot, paneI
 				})
 			}
 		})
-	})
-	if state.Active {
-		c.After(100 * time.Millisecond)
-		ui.Text(c, "Generation active")
-		ui.Button(c, "Stop generation").OnClick(func() { ch.chat.Cancel() })
-		return
-	}
-	ui.TextInput(c, &ch.apiKey).Password().MaxLength(8192).Label("API key (optional; cleared on send)")
-	ui.TextArea(c, &ch.draft).Label("Message").Height(80).MaxLength(8192)
-	ui.Row(c).Gap(spaceControl).Children(func() {
-		ui.Button(c, "Send message").Disabled(strings.TrimSpace(ch.draft) == "").OnClick(func() { s.sendChat(ch) })
-		ui.Button(c, "Clear conversation").Disabled(len(state.Turns) == 0).OnClick(func() { s.clearChat(ch) })
 	})
 }
 

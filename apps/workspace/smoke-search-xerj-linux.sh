@@ -10,7 +10,7 @@ cleanup() {
     wait "$pid" 2>/dev/null || true
   fi
   if [[ $rc != 0 && -f "$out/server.log" ]]; then
-    tail -100 "$out/server.log" >&2
+    tail -100 "$out/server.log" | sed -E 's/(#token=)[^[:space:]]+/\1[redacted]/g' >&2
   fi
   rm -rf -- "$out"
 }
