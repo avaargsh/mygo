@@ -90,7 +90,6 @@ func (s *shell) renderChat(c *ui.Context, snapshot core.WorkspaceSnapshot, paneI
 		ui.Text(c, "Endpoint: "+ch.boundEndpoint)
 		ui.Text(c, "Model: "+ch.boundModel)
 	}
-	ui.Text(c, "Send transmits your prompt and completed chat history to the selected model. No other workspace content is included. Chats are not automatically saved. Explicit archives contain plaintext messages and the model connection, but not credentials or unsent drafts.")
 	// Keep input and send controls ahead of the flexible transcript in a split pane.
 	if state.Active {
 		c.After(100 * time.Millisecond)
@@ -101,8 +100,9 @@ func (s *shell) renderChat(c *ui.Context, snapshot core.WorkspaceSnapshot, paneI
 			ui.Text(c, "Review the restored endpoint and model. Confirm before allowing future sends.")
 			ui.Button(c, "Confirm restored model").OnClick(func() { ch.confirmConnection = false; s.status = "" })
 		}
+		ui.TextArea(c.Key("chat-message"), &ch.draft).Label("Message").Placeholder("Write a message…").Height(64).MinHeight(48).MaxLength(8192)
 		ui.TextInput(c.Key("chat-credential"), &ch.apiKey).Password().MaxLength(8192).Label("API key (optional; cleared on send)")
-		ui.TextArea(c.Key("chat-message"), &ch.draft).Label("Message").Placeholder("Write a message…").Height(72).MinHeight(64).MaxLength(8192)
+		ui.Text(c, "Send shares this chat only.").FontSize(fontSmall)
 		ui.Row(c).Gap(spaceControl).Children(func() {
 			ui.Button(c, "Send message").Disabled(ch.confirmConnection || strings.TrimSpace(ch.draft) == "").OnClick(func() { s.sendChat(ch) })
 			ui.Button(c, "Clear conversation").Disabled(len(state.Turns) == 0).OnClick(func() { s.clearChat(ch) })
@@ -121,6 +121,7 @@ func (s *shell) renderChat(c *ui.Context, snapshot core.WorkspaceSnapshot, paneI
 		})
 	}
 	ui.Scroll(c).Grow(1).MinHeight(0).Children(func() {
+		ui.Text(c, "Send includes your prompt and completed chat history only. Local archives are explicit, plaintext, and exclude credentials and unsent drafts.").FontSize(fontSmall)
 		ui.Column(c).Gap(spaceSection).Children(func() {
 			for i, turn := range state.Turns {
 				ui.Column(c.Key("turn-"+strconv.Itoa(i))).Gap(4).Children(func() {
