@@ -16,7 +16,7 @@ func builtInContent(dir string) (*core.ContentManager, error) {
 		{ID: "browser", Title: "Browser", Open: func() (any, error) { return &browserSession{}, nil }},
 		{ID: "terminal", Title: "Terminal", Open: func() (any, error) { return &core.TerminalSession{}, nil }},
 		{ID: "files", Title: "Files", Open: func() (any, error) { return &filesSession{}, nil }},
-		{ID: "chat", Title: "Chat", Open: func() (any, error) { return &chatViewSession{}, nil }},
+		{ID: "chat", Title: "Chat", Open: func() (any, error) { return &chatViewSession{}, nil }, NewInstance: func(id string) (any, error) { return &chatViewSession{sessionID: id}, nil }},
 		{ID: "notes", Title: "Notes", Open: func() (any, error) {
 			return core.OpenNote(filepath.Join(dir, "notes.md"))
 		}},
@@ -51,7 +51,7 @@ func (s *shell) saveNote() {
 
 func (s *shell) retryContent(id string) {
 	s.status = ""
-	if _, err := s.content.Open(id); err != nil {
+	if _, err := restoreContentSession(s.content, id); err != nil {
 		s.status = "Content open failed: " + err.Error()
 		log.Print(s.status)
 	}
