@@ -23,7 +23,21 @@ func TestStageApprovedText(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !containsPath(state, stage.Root()) || stage.Root() == state {
+	// Compare filesystem identity rather than lexical aliases. TempDir can
+	// resolve to a different spelling (macOS /var, Windows junctions).
+	stateInfo, err := os.Stat(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stageParent, err := os.Stat(filepath.Dir(stage.Root()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	stageInfo, err := os.Stat(stage.Root())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !os.SameFile(stateInfo, stageParent) || os.SameFile(stateInfo, stageInfo) {
 		t.Fatal("not a dedicated stage")
 	}
 	if err := os.WriteFile(filepath.Join(root, "src/a.txt"), []byte("changed"), 0600); err != nil {
