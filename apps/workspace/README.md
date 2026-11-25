@@ -359,3 +359,21 @@ One test uses the actual SSE Client with a local HTTP server; cancellation
 and history tests use controlled stream functions. Native Chat UI tests
 are committed but not executed; no external model endpoint or full
 Go 1.27.4 cloud-host desktop build is claimed.
+
+
+## Merge-readiness follow-up
+
+A rejected chat delta now permanently fails the current turn, even if a
+faulty stream adapter ignores the callback error and returns a successful
+completion. Partial valid text is preserved and the failed turn is excluded
+from subsequent requests. Regression reproduced RED and verified GREEN.
+All 16 top-level model package tests, race detection and vet passed in the
+Go 1.23.2 isolated model package; both changed blobs were verified against
+the tested files.
+
+The separate Workspace Gate workflow runs Linux Go 1.27.4 workspace tests,
+core/model/system race tests, vet and desktop binary compilation with the
+repository's JavaScript build and desktop runtime dependencies. It does not
+replace the existing full cross-platform CI or actual desktop/WebView/PTY
+smoke verification. Workflow YAML was parsed and structurally checked
+locally; a successful Actions run is not yet established.
