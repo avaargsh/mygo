@@ -59,6 +59,17 @@ def enter(label, value):
 
 
 def main():
+    if sys.argv[1:] == ["--check-idle"]:
+        find("Search local documents")
+        for label in ("Exact index name", "Search text"):
+            value = find(label).queryText().getText(0, -1)
+            if value:
+                raise RuntimeError(f"Restart restored private {label}")
+        if find("Find passages").getState().contains(pyatspi.STATE_ENABLED):
+            raise RuntimeError("Restored Search should require fresh input")
+        print("PASS: installed Search tab reopened idle without saved index or query")
+        return
+
     index = os.environ["MYGO_XERJ_APP_LIVE_INDEX"]
     click("Search")
     find("Search local documents")

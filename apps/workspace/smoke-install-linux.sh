@@ -153,6 +153,17 @@ if [[ -n "${MYGO_XERJ_APP_LIVE_INDEX:-}" ]]; then
   rm -- "$state"
   xdotool key --clearmodifiers ctrl+s
   wait_for_state
+  python3 - "$state" "$MYGO_XERJ_APP_LIVE_INDEX" <<'PY_CHECK'
+import json, pathlib, sys
+raw = pathlib.Path(sys.argv[1]).read_text()
+snapshot = json.loads(raw)["workspace"]
+assert any(tab["SessionID"] == "search" for pane in snapshot["panes"].values() for tab in (pane["tabs"] or []))
+for private in (sys.argv[2], "asterquill", "guide.md", "127.0.0.1:9200"):
+    assert private not in raw.lower(), "Search data was written to workspace state"
+PY_CHECK
+  close_app
+  start_app
+  /usr/bin/python3 "$probe" --check-idle
 fi
 close_app
 echo 'PASS: installed save, graceful close, restart and restored layout'
