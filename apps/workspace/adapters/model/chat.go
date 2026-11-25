@@ -95,16 +95,22 @@ func (s *ChatSession) generate(ctx context.Context, cancel context.CancelFunc, s
 	defer close(done)
 	defer cancel()
 	var text strings.Builder
+	var rejected error
 	result, err := stream(ctx, key, messages, func(delta string) error {
 		s.mu.Lock()
 		if err := ctx.Err(); err != nil {
 			s.mu.Unlock()
 			return err
 		}
+		if rejected != nil {
+			s.mu.Unlock()
+			return rejected
+		}
 		turn := &s.turns[index]
 		if !utf8.ValidString(delta) || len(delta) > maxChatReplyBytes-len(turn.Assistant) {
+			rejected = errors.New("invalid or oversized chat reply")
 			s.mu.Unlock()
-			return errors.New("invalid or oversized chat reply")
+			return rejected
 		}
 		text.WriteString(delta)
 		turn.Assistant = text.String()
@@ -119,7 +125,7 @@ func (s *ChatSession) generate(ctx context.Context, cancel context.CancelFunc, s
 	switch {
 	case ctx.Err() != nil:
 		turn.State = ChatCanceled
-	case err != nil || result.Text != turn.Assistant:
+	case rejected != nil || err != nil || result.Text != turn.Assistant:
 		turn.State = ChatFailed
 	case result.FinishReason != "stop" && result.FinishReason != "length" && result.FinishReason != "content_filter":
 		turn.State = ChatFailed
