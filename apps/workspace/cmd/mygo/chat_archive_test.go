@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -43,6 +44,14 @@ func TestWorkspaceChatArchiveExplicitSaveLoad(t *testing.T) {
 	data, err := os.ReadFile(path)
 	if err != nil || len(data) == 0 {
 		t.Fatalf("archive not saved: %v", err)
+	}
+	if bytes.Contains(data, []byte("credential-fixture")) || bytes.Contains(data, []byte("unsent-fixture")) {
+		t.Fatal("archive included credentials or drafts")
+	}
+	// An occupied session cannot be replaced by a loaded archive.
+	s.loadChatArchive(ch)
+	if ch.apiKey != "credential-fixture" || ch.draft != "unsent-fixture" || len(ch.chat.Snapshot().Turns) != 1 {
+		t.Fatal("load replaced live conversation")
 	}
 	restored, err := builtInContent(filepath.Dir(s.statePath))
 	if err != nil {
