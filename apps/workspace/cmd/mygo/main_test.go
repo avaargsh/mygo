@@ -244,3 +244,75 @@ func TestSystemInfoRefreshesThroughContentView(t *testing.T) {
 		t.Fatalf("system snapshot not refreshed: %+v", system)
 	}
 }
+
+func TestFilesViewPreviewsAndClosesTextFile(t *testing.T) {
+	dir := t.TempDir()
+	name := filepath.Join(dir, "README.md")
+	if err := os.WriteFile(name, []byte("# MyGo Workspace"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	browser, err := core.NewFileBrowser(root.FS())
+	if err != nil {
+		root.Close()
+		t.Fatal(err)
+	}
+	w, err := core.NewWorkspace("root")
+	if err != nil {
+		root.Close()
+		t.Fatal(err)
+	}
+	content, err := builtInContent(t.TempDir())
+	if err != nil {
+		root.Close()
+		t.Fatal(err)
+	}
+	s := &shell{workspace: w, content: content}
+	s.open("files")
+	session := s.filesSession()
+	session.root, session.browser, session.label = root, browser, dir
+	tt := ui.NewTester(s.view, 1200, 800)
+	if err := tt.Click("Preview: README.md"); err != nil {
+		t.Fatal(err)
+	}
+	if session.preview != "# MyGo Workspace" || session.previewErr != "" {
+		t.Fatalf("unexpected preview: %+v", session)
+	}
+	if err := tt.Click("Back to files"); err != nil {
+		t.Fatal(err)
+	}
+	if session.previewName != "" || session.preview != "" {
+		t.Fatal("preview state was not cleared")
+	}
+	if err := session.close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestFilesViewRejectsBinaryPreview(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "binary.bin"), []byte{0xff, 0xfe, 0xfd}, 0600); err != nil {
+		t.Fatal(err)
+	}
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	browser, err := core.NewFileBrowser(root.FS())
+	if err != nil {
+		root.Close()
+		t.Fatal(err)
+	}
+	f := &filesSession{root: root, browser: browser}
+	s := &shell{}
+	s.previewFile(f, "binary.bin")
+	if f.preview != "" || f.previewErr != "preview supports UTF-8 text files only" {
+		t.Fatalf("binary preview was not rejected: %+v", f)
+	}
+	if err := f.close(); err != nil {
+		t.Fatal(err)
+	}
+}
