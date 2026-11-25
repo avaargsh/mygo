@@ -222,3 +222,25 @@ func TestFormatSystemBytes(t *testing.T) {
 		}
 	}
 }
+
+func TestSystemInfoRefreshesThroughContentView(t *testing.T) {
+	w, err := core.NewWorkspace("root")
+	if err != nil {
+		t.Fatal(err)
+	}
+	content, err := builtInContent(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &shell{workspace: w, content: content}
+	s.open("system")
+	tt := ui.NewTester(s.view, 1200, 800)
+	if err := tt.Click("Refresh metrics"); err != nil {
+		t.Fatal(err)
+	}
+	session := content.Session("system")
+	system, ok := session.Value.(*systemSession)
+	if !ok || system.snapshot == nil || system.snapshot.CapturedAt.IsZero() || system.err != "" {
+		t.Fatalf("system snapshot not refreshed: %+v", system)
+	}
+}
