@@ -46,6 +46,9 @@ jobs:
           bun run build
       - name: Test workspace packages
         run: xvfb-run -a dbus-run-session -- go test -count=1 ./apps/workspace/... ./plugins/xerj
+      - name: Test Search on a pinned installed XERJ
+        if: github.ref == 'refs/heads/test/workspace-search-entry'
+        run: xvfb-run -a dbus-run-session -- bash apps/workspace/smoke-search-xerj-linux.sh
       - name: Race detection
         run: go test -race -count=1 ./apps/workspace/core ./apps/workspace/adapters/model ./apps/workspace/adapters/system ./apps/workspace/cmd/mygo ./plugins/xerj
       - name: Vet and build workspace binary
