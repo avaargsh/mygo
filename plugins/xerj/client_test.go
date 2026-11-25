@@ -94,7 +94,7 @@ func TestRejectIncompleteOrForeignHit(t *testing.T) {
 	for _, body := range []string{
 		`{"timed_out":true,"hits":{"hits":[]}}`,
 		`{"_shards":{"failed":1},"hits":{"hits":[]}}`,
-		`{"hits":{"hits":[{"_index":"other","_source":{"ax_path":"notes.txt","body":"needle"}}]}}`,
+		`{"hits":{"hits":[{"_index":"other","_source":{"ax_path":"notes.txt"},"fields":{"_passage":{"start_offset":0,"text":"needle"}}}]}}`,
 	} {
 		s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(body)) }))
 		c, err := New(s.URL, "docs")
@@ -106,5 +106,20 @@ func TestRejectIncompleteOrForeignHit(t *testing.T) {
 		if err == nil {
 			t.Errorf("accepted %s", body)
 		}
+	}
+}
+
+func TestEmptySearch(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"timed_out":false,"hits":{"hits":[]}}`))
+	}))
+	defer s.Close()
+	c, err := New(s.URL, "docs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	hits, err := c.Search(context.Background(), "needle", 1)
+	if err != nil || hits == nil || len(hits) != 0 {
+		t.Fatalf("hits=%+v err=%v", hits, err)
 	}
 }
