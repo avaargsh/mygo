@@ -39,13 +39,15 @@ type binding struct {
 }
 
 // Manager coordinates application-owned bindings on one local node. It is
-// in-memory only, does not create indices, and is not an authorization service.
+// in-memory by default, does not create indices, and is not an authorization service.
 // Only trusted application code may call its methods. Do not copy after use.
 type Manager struct {
-	mu         sync.Mutex
-	endpoint   string
-	workspaces map[string]binding
-	reserved   map[string]struct{}
+	mu            sync.Mutex
+	endpoint      string
+	workspaces    map[string]binding
+	reserved      map[string]struct{}
+	manifestPath  string
+	manifestFault bool
 }
 
 func NewManager(endpoint string) *Manager {
@@ -64,6 +66,9 @@ func (m *Manager) Begin(workspace, index string) (Generation, error) {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.manifestFault {
+		return Generation{}, ErrManifestUnavailable
+	}
 	if _, ok := m.reserved[index]; ok {
 		return Generation{}, errors.New("index already reserved")
 	}
@@ -74,6 +79,9 @@ func (m *Manager) Begin(workspace, index string) (Generation, error) {
 	number := old.status.Generation + 1
 	m.reserved[index] = struct{}{}
 	m.workspaces[workspace] = binding{status: IndexStatus{State: IndexBuilding, Generation: number}, client: client}
+	if err := m.persistLocked(); err != nil {
+		return Generation{}, err
+	}
 	return Generation{manager: m, workspace: workspace, number: number}, nil
 }
 
@@ -84,19 +92,25 @@ func (m *Manager) Fail(ticket Generation) error    { return m.finish(ticket, Ind
 func (m *Manager) finish(ticket Generation, state IndexState) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.manifestFault {
+		return ErrManifestUnavailable
+	}
 	b, ok := m.workspaces[ticket.workspace]
 	if ticket.manager != m || !ok || b.status.Generation != ticket.number || b.status.State != IndexBuilding {
 		return ErrStaleGeneration
 	}
 	b.status.State = state
 	m.workspaces[ticket.workspace] = b
-	return nil
+	return m.persistLocked()
 }
 
 func (m *Manager) Status(workspace string) IndexStatus {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if b, ok := m.workspaces[workspace]; ok {
+		if m.manifestFault {
+			return IndexStatus{State: IndexFailed, Generation: b.status.Generation}
+		}
 		return b.status
 	}
 	return IndexStatus{State: IndexUnbound}
@@ -107,6 +121,10 @@ func (m *Manager) Status(workspace string) IndexStatus {
 // Its final generation check is the linearization point for successful reads.
 func (m *Manager) Search(ctx context.Context, workspace, query string, limit int) ([]Hit, error) {
 	m.mu.Lock()
+	if m.manifestFault {
+		m.mu.Unlock()
+		return nil, ErrManifestUnavailable
+	}
 	b, ok := m.workspaces[workspace]
 	m.mu.Unlock()
 	if !ok || b.status.State != IndexReady {
@@ -115,6 +133,9 @@ func (m *Manager) Search(ctx context.Context, workspace, query string, limit int
 	hits, err := b.client.Search(ctx, query, limit)
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.manifestFault {
+		return nil, ErrManifestUnavailable
+	}
 	if m.workspaces[workspace].status != b.status {
 		return nil, ErrStaleGeneration
 	}
