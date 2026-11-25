@@ -67,6 +67,10 @@ func NewBuildQueue(manager *Manager, capacity int) (*BuildQueue, error) {
 // keep the staged corpus and pinned executable immutable until completion.
 // A queued job does not invalidate the current ready binding until it runs.
 func (q *BuildQueue) Submit(workspace string, config AutoindexConfig, expected map[string]TextIndexVerifier) (*BuildJob, error) {
+	revision, err := q.manager.captureRevision(workspace)
+	if err != nil {
+		return nil, err
+	}
 	if len(expected) < 1 || len(expected) > 8 {
 		return nil, errors.New("invalid expected dataset count")
 	}
@@ -84,7 +88,9 @@ func (q *BuildQueue) Submit(workspace string, config AutoindexConfig, expected m
 		}
 		snapshot[name] = TextIndexVerifier{Expected: digests}
 	}
-	return q.submit(workspace, config.Prefix, func(ctx context.Context) error { return q.manager.BuildTextSet(ctx, workspace, config, snapshot) })
+	return q.submit(workspace, config.Prefix, func(ctx context.Context) error {
+		return q.manager.buildTextSetAt(ctx, workspace, config.Prefix, snapshot, config.Run, revision)
+	})
 }
 
 func (q *BuildQueue) submit(workspace, prefix string, run func(context.Context) error) (*BuildJob, error) {
