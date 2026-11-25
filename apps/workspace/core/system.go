@@ -49,7 +49,7 @@ type SystemSnapshot struct {
 }
 
 func CPUUsagePercent(previous, current CPUTime) (float64, bool) {
-	if current.Total <= previous.Total || current.Idle < previous.Idle || current.Idle > current.Total {
+	if previous.Total == 0 || previous.Idle > previous.Total || current.Total <= previous.Total || current.Idle < previous.Idle || current.Idle > current.Total {
 		return 0, false
 	}
 	totalDelta := current.Total - previous.Total
