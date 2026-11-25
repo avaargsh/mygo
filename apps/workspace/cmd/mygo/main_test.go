@@ -366,3 +366,55 @@ func TestWorkspaceCommandRejectsDisabledLayoutOperation(t *testing.T) {
 		t.Fatal("disabled command changed the workspace")
 	}
 }
+
+func TestChatTabStartsIdleAndSurvivesClosingView(t *testing.T) {
+	w, err := core.NewWorkspace("root")
+	if err != nil {
+		t.Fatal(err)
+	}
+	content, err := builtInContent(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &shell{workspace: w, content: content, theme: "system"}
+	s.open("chat")
+	ch := s.chatSession()
+	if ch == nil || ch.chat.Snapshot().Active || len(ch.chat.Snapshot().Turns) != 0 {
+		t.Fatal("opening Chat started a model request")
+	}
+	ch.draft = "draft"
+	snap := w.Snapshot()
+	if err := w.Close("root", snap.Panes["root"].ActiveTab); err != nil {
+		t.Fatal(err)
+	}
+	s.open("chat")
+	if s.chatSession() != ch || ch.draft != "draft" {
+		t.Fatal("closing the tab lost its session")
+	}
+	tt := ui.NewTester(s.view, 1400, 900)
+	if err := tt.Click("Send message"); err != nil {
+		t.Fatal(err)
+	}
+	if s.status == "" || ch.chat.Snapshot().Active || ch.draft != "draft" {
+		t.Fatal("invalid endpoint did not fail before sending")
+	}
+}
+
+func TestChatConnectionChangeRequiresClearingConversation(t *testing.T) {
+	ch := &chatViewSession{
+		endpoint: "https://different.example/v1/chat/completions",
+		modelName: "model",
+		boundEndpoint: "https://original.example/v1/chat/completions",
+		boundModel: "model",
+		draft: "prompt",
+	}
+	s := &shell{}
+	s.sendChat(ch)
+	if s.status != "Clear conversation before changing its model connection" || ch.chat.Snapshot().Active || ch.draft != "prompt" {
+		t.Fatal("connection change was not fenced")
+	}
+	s.clearChat(ch)
+	if ch.boundEndpoint != "" || ch.boundModel != "" || ch.apiKey != "" || ch.draft != "" {
+		t.Fatal("clear did not release conversation binding")
+	}
+}
