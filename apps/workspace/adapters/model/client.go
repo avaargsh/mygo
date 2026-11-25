@@ -119,9 +119,10 @@ func (c *Client) Complete(ctx context.Context, apiKey string, messages []Message
 	var result struct {
 		Choices []struct {
 			Message struct {
-				Role      string
-				Content   *string
-				ToolCalls []json.RawMessage `json:"tool_calls"`
+				Role         string
+				Content      *string
+				ToolCalls    []json.RawMessage `json:"tool_calls"`
+				FunctionCall json.RawMessage   `json:"function_call"`
 			}
 			FinishReason string `json:"finish_reason"`
 		}
@@ -130,7 +131,7 @@ func (c *Client) Complete(ctx context.Context, apiKey string, messages []Message
 		return Completion{}, errors.New("invalid model response")
 	}
 	choice := result.Choices[0]
-	if choice.Message.Role != "assistant" || choice.Message.Content == nil || len(choice.Message.ToolCalls) > 0 || choice.FinishReason == "tool_calls" || choice.FinishReason == "function_call" {
+	if choice.Message.Role != "assistant" || choice.Message.Content == nil || len(choice.Message.ToolCalls) > 0 || (len(choice.Message.FunctionCall) > 0 && string(choice.Message.FunctionCall) != "null") || choice.FinishReason == "tool_calls" || choice.FinishReason == "function_call" {
 		return Completion{}, errors.New("unsupported model response")
 	}
 	return Completion{Text: *choice.Message.Content, FinishReason: choice.FinishReason}, nil
