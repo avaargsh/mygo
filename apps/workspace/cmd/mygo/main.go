@@ -379,6 +379,27 @@ func main() {
 			Height:  680,
 			Content: ui.View(s.view),
 		})
+		s.window.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
+			{Role: mygo.RoleAppMenu},
+			{Label: "File", Submenu: []*mygo.MenuItem{
+				{Label: "Save workspace", Accelerator: "CmdOrCtrl+S", Click: func(*mygo.MenuItem, *mygo.Window) {
+					s.runCommand("workspace.save")
+					s.window.Invalidate()
+				}},
+				mygo.Separator(),
+				{Label: "Close window", Accelerator: "CmdOrCtrl+W", Click: func(*mygo.MenuItem, *mygo.Window) {
+					s.window.Close()
+				}},
+			}},
+			{Role: mygo.RoleEditMenu},
+			{Label: "View", Submenu: []*mygo.MenuItem{
+				{Label: "Split right", Accelerator: "CmdOrCtrl+Shift+E", Click: func(*mygo.MenuItem, *mygo.Window) {
+					s.runCommand("layout.split-right")
+					s.window.Invalidate()
+				}},
+			}},
+			{Label: "Window", Submenu: []*mygo.MenuItem{{Role: mygo.RoleMinimize}}},
+		}))
 		s.window.OnClose(func(e *mygo.CloseEvent) {
 			if !s.confirmClose(mygo.Dialog.Message) {
 				e.PreventDefault()
