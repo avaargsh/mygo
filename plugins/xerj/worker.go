@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"sync"
+	"time"
 )
 
 var (
@@ -27,7 +28,7 @@ const (
 
 // BuildQueue is an application-owned, process-local FIFO with one executing
 // job at a time. Capacity counts queued and active jobs. Do not copy it.
-// It does not own a goroutine; the application drives RunNext off the UI thread.
+// It does not own a goroutine; the application drives Serve or RunNext off the UI thread.
 type BuildQueue struct {
 	mu           sync.Mutex
 	manager      *Manager
@@ -37,6 +38,8 @@ type BuildQueue struct {
 	journalPath  string
 	journalFault bool
 	records      []BuildRecord
+	serving      bool
+	wake         chan struct{}
 }
 
 // BuildJob is an opaque handle. Terminal jobs are not retained by the queue.
@@ -55,7 +58,7 @@ func NewBuildQueue(manager *Manager, capacity int) (*BuildQueue, error) {
 	if manager == nil || capacity < 1 || capacity > 64 {
 		return nil, errors.New("invalid build queue configuration")
 	}
-	return &BuildQueue{manager: manager, capacity: capacity}, nil
+	return &BuildQueue{manager: manager, capacity: capacity, wake: make(chan struct{}, 1)}, nil
 }
 
 // Submit copies the bounded expected digest map. The trusted application must
@@ -122,6 +125,7 @@ func (q *BuildQueue) submit(workspace, prefix string, run func(context.Context) 
 		return nil, err
 	}
 	q.pending = append(q.pending, j)
+	q.signalLocked()
 	return j, nil
 }
 
@@ -129,6 +133,10 @@ func (q *BuildQueue) submit(workspace, prefix string, run func(context.Context) 
 // queued work untouched. Running cancellation is cooperative; success may
 // already have been committed before cancellation is observed.
 func (q *BuildQueue) RunNext(ctx context.Context) (bool, error) {
+	return q.runNext(ctx, false, 0)
+}
+
+func (q *BuildQueue) runNext(ctx context.Context, serving bool, timeout time.Duration) (bool, error) {
 	if ctx == nil {
 		return false, errors.New("context required")
 	}
@@ -140,7 +148,7 @@ func (q *BuildQueue) RunNext(ctx context.Context) (bool, error) {
 		q.mu.Unlock()
 		return false, ErrBuildJournalUnavailable
 	}
-	if q.active != nil {
+	if q.active != nil || (q.serving && !serving) {
 		q.mu.Unlock()
 		return false, ErrBuildWorkerBusy
 	}
@@ -159,7 +167,13 @@ func (q *BuildQueue) RunNext(ctx context.Context) (bool, error) {
 	}
 	q.pending[0] = nil
 	q.pending = q.pending[1:]
-	jobctx, cancel := context.WithCancel(ctx)
+	var jobctx context.Context
+	var cancel context.CancelFunc
+	if timeout > 0 {
+		jobctx, cancel = context.WithTimeout(ctx, timeout)
+	} else {
+		jobctx, cancel = context.WithCancel(ctx)
+	}
 	j.cancel = cancel
 	j.state = BuildRunning
 	q.active = j
