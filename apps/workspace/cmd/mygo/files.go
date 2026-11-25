@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"unicode/utf8"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/apps/workspace/core"
@@ -10,18 +11,40 @@ import (
 
 // filesSession retains an explicitly selected root only in memory.
 type filesSession struct {
-	root    *os.Root
-	browser *core.FileBrowser
-	label   string
+	root        *os.Root
+	browser     *core.FileBrowser
+	label       string
+	previewName string
+	preview     string
+	previewErr  string
 }
 
 func (f *filesSession) close() error {
-	if f.root == nil {
-		return nil
-	}
 	root := f.root
 	f.root, f.browser, f.label = nil, nil, ""
+	f.previewName, f.preview, f.previewErr = "", "", ""
+	if root == nil {
+		return nil
+	}
 	return root.Close()
+}
+
+func (s *shell) previewFile(f *filesSession, name string) {
+	f.previewName, f.preview, f.previewErr = name, "", ""
+	if f.browser == nil {
+		f.previewErr = "folder access has been revoked"
+		return
+	}
+	data, err := f.browser.ReadFile(name, 256<<10)
+	if err != nil {
+		f.previewErr = err.Error()
+		return
+	}
+	if !utf8.Valid(data) {
+		f.previewErr = "preview supports UTF-8 text files only"
+		return
+	}
+	f.preview = string(data)
 }
 
 func (s *shell) selectFilesRoot(f *filesSession) {
@@ -92,8 +115,10 @@ func (s *shell) renderFiles(c *ui.Context, f *filesSession) {
 				ui.Row(c.Key(entry.Name)).Children(func() {
 					if entry.Directory {
 						ui.Button(c, "Folder: "+entry.Name).OnClick(func() { s.fileResult(b.Enter(entry.Name)) })
+					} else if entry.Regular && !entry.Symlink {
+						ui.Button(c, "Preview: "+entry.Name).OnClick(func() { s.previewFile(f, entry.Name) })
 					} else {
-						ui.Text(c, entry.Name)
+						ui.Text(c, "Unsupported: "+entry.Name)
 					}
 				})
 			}
