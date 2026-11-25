@@ -89,7 +89,7 @@ func TestManifestRejectsMissingCorruptAndWrongNode(t *testing.T) {
 	}
 	for _, data := range []string{
 		`{`,
-		`{"version":2,"endpoint":"http://127.0.0.1:9200","reserved":[],"bindings":[]}`,
+		`{"version":99,"endpoint":"http://127.0.0.1:9200","reserved":[],"bindings":[]}`,
 		`{"version":1,"endpoint":"http://127.0.0.1:9200","reserved":["a-v1"],"bindings":[{"workspace":"a","index":"missing","generation":1,"state":"READY"}]}`,
 		`{"version":1,"endpoint":"http://127.0.0.1:9200","reserved":["a-v1"],"bindings":[{"workspace":"a","index":"a-v1","generation":1,"state":"READY"},{"workspace":"b","index":"a-v1","generation":1,"state":"READY"}]}`,
 	} {
