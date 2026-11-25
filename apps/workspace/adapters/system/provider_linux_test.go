@@ -111,3 +111,16 @@ func TestReadNetworkRejectsCounterOverflow(t *testing.T) {
 		t.Fatal("network counter overflow was accepted")
 	}
 }
+
+func TestReadNetworkSupportsInterfaceAliases(t *testing.T) {
+	proc := t.TempDir()
+	name := filepath.Join(proc, "dev")
+	writeFixture(t, proc, "dev", "eth0:1: 123 0 0 0 0 0 0 0 456 0 0 0 0 0 0 0\n")
+	rx, tx, interfaces, err := readNetwork(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rx != 123 || tx != 456 || interfaces != 1 {
+		t.Fatalf("unexpected alias counters: rx=%d tx=%d interfaces=%d", rx, tx, interfaces)
+	}
+}
