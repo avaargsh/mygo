@@ -241,6 +241,10 @@ func (s *shell) renderContent(c *ui.Context, sessionID string) {
 }
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "--webview-smoke" {
+		runWebViewSmoke()
+		return
+	}
 	config, err := os.UserConfigDir()
 	if err != nil {
 		log.Fatal(err)
