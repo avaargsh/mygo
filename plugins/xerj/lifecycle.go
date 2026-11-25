@@ -3,8 +3,10 @@ package xerj
 import (
 	"context"
 	"errors"
+	"sort"
 	"strings"
 	"sync"
+	"time"
 )
 
 var (
@@ -34,8 +36,8 @@ type Generation struct {
 }
 
 type binding struct {
-	status IndexStatus
-	client *Client
+	status  IndexStatus
+	clients []*Client
 }
 
 // Manager coordinates application-owned bindings on one local node. It is
@@ -57,28 +59,49 @@ func NewManager(endpoint string) *Manager {
 // Begin fences the old binding immediately. Each attempt requires a fresh,
 // dedicated exact index, never reused during this manager's lifetime.
 func (m *Manager) Begin(workspace, index string) (Generation, error) {
+	return m.BeginSet(workspace, []string{index})
+}
+
+// BeginSet reserves all exact indices as one generation (maximum eight).
+func (m *Manager) BeginSet(workspace string, indices []string) (Generation, error) {
 	if strings.TrimSpace(workspace) == "" || len(workspace) > 256 {
 		return Generation{}, errors.New("invalid workspace identity")
 	}
-	client, err := New(m.endpoint, index)
-	if err != nil {
-		return Generation{}, err
+	if len(indices) == 0 || len(indices) > 8 {
+		return Generation{}, errors.New("invalid index set size")
+	}
+	names := append([]string(nil), indices...)
+	sort.Strings(names)
+	clients := make([]*Client, 0, len(names))
+	for i, index := range names {
+		if i > 0 && names[i-1] == index {
+			return Generation{}, errors.New("duplicate index")
+		}
+		client, err := New(m.endpoint, index)
+		if err != nil {
+			return Generation{}, err
+		}
+		clients = append(clients, client)
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.manifestFault {
 		return Generation{}, ErrManifestUnavailable
 	}
-	if _, ok := m.reserved[index]; ok {
-		return Generation{}, errors.New("index already reserved")
+	for _, index := range names {
+		if _, ok := m.reserved[index]; ok {
+			return Generation{}, errors.New("index already reserved")
+		}
 	}
 	old := m.workspaces[workspace]
 	if old.status.Generation == ^uint64(0) {
 		return Generation{}, errors.New("generation exhausted")
 	}
 	number := old.status.Generation + 1
-	m.reserved[index] = struct{}{}
-	m.workspaces[workspace] = binding{status: IndexStatus{State: IndexBuilding, Generation: number}, client: client}
+	for _, index := range names {
+		m.reserved[index] = struct{}{}
+	}
+	m.workspaces[workspace] = binding{status: IndexStatus{State: IndexBuilding, Generation: number}, clients: clients}
 	if err := m.persistLocked(); err != nil {
 		return Generation{}, err
 	}
@@ -130,7 +153,7 @@ func (m *Manager) Search(ctx context.Context, workspace, query string, limit int
 	if !ok || b.status.State != IndexReady {
 		return nil, ErrIndexNotReady
 	}
-	hits, err := b.client.Search(ctx, query, limit)
+	hits, err := searchSet(ctx, b.clients, query, limit)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.manifestFault {
@@ -143,4 +166,38 @@ func (m *Manager) Search(ctx context.Context, workspace, query string, limit int
 		return nil, err
 	}
 	return hits, nil
+}
+
+// searchSet uses a shared deadline and deterministic round-robin interleaving,
+// not a claim of comparable relevance scores across datasets. Any failure
+// discards all hits, even when the global limit was already satisfied.
+func searchSet(ctx context.Context, clients []*Client, query string, limit int) ([]Hit, error) {
+	if ctx == nil || limit < 1 || limit > 20 {
+		return nil, errors.New("invalid search context or limit")
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	sets := make([][]Hit, 0, len(clients))
+	for _, c := range clients {
+		hits, err := c.Search(ctx, query, limit)
+		if err != nil {
+			return nil, err
+		}
+		sets = append(sets, hits)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	out := make([]Hit, 0, limit)
+	for rank := 0; rank < limit && len(out) < limit; rank++ {
+		for _, hits := range sets {
+			if rank < len(hits) {
+				out = append(out, hits[rank])
+				if len(out) == limit {
+					break
+				}
+			}
+		}
+	}
+	return out, nil
 }
