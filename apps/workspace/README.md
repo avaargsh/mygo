@@ -119,7 +119,7 @@ The root build still needs Go 1.27.3+ and a reachable dependency source.
 ## Browser (M2 second slice)
 
 Open Browser from the toolbar. Enter an explicit HTTP or HTTPS address and
-choose Go (or submit the address field). A native WebView is created only
+choose Go. A native WebView is created only
 on a successful explicit navigation request; restored tabs do not start
 network requests. Back, Forward, Reload and Use current URL are available.
 The address field is an editable request address, not a continuously
@@ -259,3 +259,24 @@ preview reads may block the UI; bounded asynchronous I/O and cancellation
 are follow-up work. The OS-root adapter confines access to the selected root,
 but this feature is not a malware scanner and does not inspect file contents
 for safety.
+
+## Command Palette (M2 next slice)
+
+Choose Commands in the window header, search by title, stable command ID or
+keywords (including some Chinese terms), and click an enabled Run action.
+The existing toolbar and palette share one built-in registry. Layout actions
+recheck the active workspace immediately before dispatch. Opening Terminal,
+Browser or Files still does not start a shell, navigate or grant directory
+access. This registry is UI-owned, not a shell executor or Agent/MCP tool API.
+Search is side-effect free; a successful dispatch closes the palette. A
+dispatch result only confirms that a registered callback ran; operation-specific
+errors remain in the workspace status. Keyboard shortcut binding and an
+overlay layout are deferred pending native UI validation.
+
+Evidence: three command registry tests were run in the isolated Go 1.23.2
+container (RED compilation failure, GREEN after implementation), plus race
+and vet. The two new core file Git blob hashes match the locally tested files.
+The existing isolated core directory also passed regression tests, but it
+does not contain every latest remote file. Native palette tests and complete
+Go 1.27.3+ desktop build are not yet run. The Browser input uses the explicit Go
+button rather than relying on an unverified submit callback API.
