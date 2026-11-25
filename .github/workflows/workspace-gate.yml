@@ -44,16 +44,25 @@ jobs:
         run: |
           bun install --frozen-lockfile
           bun run build
+      - name: XERJ adapter and native search example gate
+        env:
+          MYGO_XERJ_LIVE: '0'
+          MYGO_XERJ_ACCEPTANCE: '0'
+          MYGO_XERJ_PANEL: '0'
+        run: |
+          go test -race -count=1 -timeout=5m -v ./plugins/xerj ./examples/xerj-search
+          go vet ./plugins/xerj ./examples/xerj-search
+          go build -o "$RUNNER_TEMP/mygo-xerj-search" ./examples/xerj-search
       - name: Test workspace packages
-        run: xvfb-run -a dbus-run-session -- go test -count=1 ./apps/workspace/... ./plugins/xerj
+        run: xvfb-run -a dbus-run-session -- go test -count=1 ./apps/workspace/...
       - name: Test Search on a pinned installed XERJ
-        if: github.ref == 'refs/heads/test/workspace-search-entry'
+        if: github.ref == 'refs/heads/test/workspace-search-entry' || github.ref == 'refs/heads/main'
         run: xvfb-run -a dbus-run-session -- bash apps/workspace/smoke-search-xerj-linux.sh
       - name: Race detection
-        run: go test -race -count=1 ./apps/workspace/core ./apps/workspace/adapters/model ./apps/workspace/adapters/system ./apps/workspace/cmd/mygo ./plugins/xerj
+        run: go test -race -count=1 ./apps/workspace/core ./apps/workspace/adapters/model ./apps/workspace/adapters/system ./apps/workspace/cmd/mygo
       - name: Vet and build workspace binary
         run: |
-          go vet ./apps/workspace/... ./plugins/xerj
+          go vet ./apps/workspace/...
           go build -o "$RUNNER_TEMP/mygo-workspace" ./apps/workspace/cmd/mygo
       - name: Prefetch pinned libraries
         run: go run ./internal/prefetch

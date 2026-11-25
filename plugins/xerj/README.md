@@ -208,7 +208,7 @@ The application must independently run BuildQueue.Serve (or dispatch RunNext), o
 
 ## Installed-engine lifecycle acceptance gate
 
-Unlike TestLiveSearch (read-only, externally indexed fixture), TestLiveInstalledFlow exercises the actual pinned autoindex subprocess via the application queue. It creates synthetic approved and unapproved files, stages only the approved file, builds and independently verifies two fresh generations, queries each after its staging directory has been removed, rejects retrieval between invalidation and rebuild, then reopens the persistent Manager and status journal and checks that reservations/history survive while search is fenced. The reopen is a logical owner reopen, not a process-crash or power-loss test.
+Unlike TestLiveSearch (read-only, externally indexed fixture), TestLiveInstalledFlow exercises the actual pinned autoindex subprocess via the application queue. It creates synthetic approved single-line files without a trailing newline and unapproved files, stages only the approved file, builds and independently verifies two fresh generations, queries each after its staging directory has been removed, rejects retrieval between invalidation and rebuild, then reopens the persistent Manager and status journal and checks that reservations/history survive while search is fenced. The reopen is a logical owner reopen, not a process-crash or power-loss test.
 
 Prerequisites: a dedicated disposable numeric-loopback HTTP node with no other users, launched manually from a pinned, independently checksum-verified XERJ release; network/feedback disabled as appropriate in the environment; the same absolute executable path and trusted digest for the test. Inspect the pinned CLI help and establish the expected dataset slug for a single plain-text fixture separately. Autoindex derives dataset names from content clustering rather than the source directory name; do not guess a slug, authorize whatever the test discovers, or weaken exact catalog/body verification to force a pass.
 
@@ -224,3 +224,32 @@ From the MyGo checkout at the candidate commit, with its pinned Go toolchain:
 Replace all example values before running. Use the actual disposable node port. The test creates two random fresh prefixes, prints them and the digest, and leaves the engine indices for inspection. Stop and dispose of the dedicated node/data after collecting evidence; it does not install software, launch a server, delete engine indices or use any real workspace data. Missing required configuration fails the opted-in test rather than skipping. Ordinary package tests skip it unless explicitly enabled.
 
 Record candidate Git SHA, Go version, XERJ version and trusted SHA-256, OS/architecture, expected fixture slug, exact generated prefixes, exit code and complete test output. A failure at catalog, content verification, passage retrieval or post-cleanup retrieval is a compatibility blocker, not permission to bypass verification. TestInstalledFlowFixture runs the same lifecycle against a POSIX test executable and simulated HTTP server; this proves the acceptance harness, not upstream behavior. Real-engine acceptance, automatic watcher-to-worker installed integration, UI and full repository CI are separate gates.
+
+## Workspace search presentation service
+
+NewWorkspaceSearchService(manager, trustedWorkspaceID) creates an opt-in, workspace-bound read-only presentation service. A nil manager explicitly disables it. The application must authorize the workspace before creating the service and must not let a frontend or model select an arbitrary workspace, index or engine endpoint. This adds no core dependency or IPC registration.
+
+Run service.Search(ctx, query, limit) off the UI thread. The request accepts only a nonblank query (at most 4096 bytes) and a limit of 1–20. The returned WorkspaceSearchResult has a stable state and a non-null hits array: MATCHES, EMPTY, DISABLED, INVALID_REQUEST, NOT_READY, STALE, UNAVAILABLE, CANCELED or TIMEOUT. Only successful retrieval can be EMPTY or MATCHES. No raw engine errors or partial hits are returned. This intentionally trades detailed error diagnosis for a simple presentation contract; logging/diagnostics remain an application integration concern.
+
+The service does not perform authorization, start the engine, own the worker or manage UI request ordering. Cancel superseded UI requests and discard late replies before displaying them, even if retrieval succeeded at its linearization point. Discard the service when the workspace changes and revalidate authorization and source identity before opening a result. Treat hit path, line, index and text as untrusted display data; never use them directly as unrestricted file-open or execution instructions.
+
+    service, err := xerj.NewWorkspaceSearchService(manager, approvedWorkspaceID)
+    // Handle err before invoking on a worker goroutine.
+    reply := service.Search(ctx, query, 5)
+    // Present reply.State; render reply.Hits as plain text.
+
+TestWorkspaceSearchStates, TestWorkspaceSearchDisabledAndInvalid and TestWorkspaceSearchDropsCanceledReply cover presentation behavior using a local interface double. TestWorkspaceSearchServiceManager is a repository integration test with the real Manager and an HTTP fixture. Native search panel, typed IPC, service lifecycle wiring and installed XERJ acceptance are separate gates.
+
+## UI search controller
+
+NewSearchController(service) wraps one authorized WorkspaceSearchService with a single-worker, latest-request-wins state machine. A nil or disabled service exposes DISABLED; an enabled service starts IDLE. Submit(query, limit) replaces the pending request, clears previous hits, cancels active work cooperatively, and shows LOADING (or INVALID_REQUEST without dispatch). At most one active and one latest pending query are retained. Cancel discards pending and in-flight results; Close permanently disables the controller and clears hits.
+
+Run controller.Serve(lifetimeContext, notify) in one application-owned worker goroutine. The optional notify callback is a short thread-safe redraw signal, not a result payload. MyGo views should request a redraw using a supported thread-safe window update/invalidation API, then call controller.Snapshot() on the UI thread at render time. Submit and Cancel handlers also request redraws. Snapshot returns a copied hit slice. Do not capture a stale result in an asynchronously queued UI callback. No polling or per-request goroutine is needed. Lifetime cancellation permanently closes the controller; the owner must join the worker off the UI thread and handle its exit. Call Close before changing workspace or authorization and discard already rendered content. A caller must still clear/revalidate results when source authorization or the accepted source revision changes: the controller does not subscribe to index invalidation or automatically remove already rendered text.
+
+The controller is not a GUI, IPC service or authorization boundary. It does not automatically retry, open files or execute retrieved content. Native UI wiring, supported platform builds and installed-engine acceptance remain separate gates.
+
+### rc.103 compatibility scope
+
+The pinned engine emits a file metadata record plus a section record for a single-line plain-text file. Both records must share file/run identity, the sole path alias must match the independently approved path, and the section body must match the exact original SHA-256. All records and the exact total are accounted for. Transformed bodies (including trimmed trailing newlines), extra sections, deduplicated aliases, unsupported extractors and incomplete responses remain rejected. The legacy one-record shape remains supported without autoindex pairing metadata. This is a narrow compatibility path, not general corpus support.
+
+Run `bash plugins/xerj/smoke-installed-flow-linux.sh` on a disposable Ubuntu runner with an unused loopback port 9200. The script checks the pinned archive, creates only synthetic data, verifies the fixture slug independently, tests two byte-preserving generations and rejects normalized bytes. Evidence-only branch 9cd3b5b passed this test in run 45723216448; revalidate on the integrated adapter head. No arbitrary Markdown, multiline, source-code or crash recovery support is established.
