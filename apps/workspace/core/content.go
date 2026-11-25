@@ -19,6 +19,9 @@ type ContentProvider struct {
 	NewInstance func(sessionID string) (any, error)
 }
 
+// ContentSession is the UI owner's live binding for a content instance.
+// In snapshot v1 ID also serves as the persisted instance reference. Value
+// is runtime state and must not be serialized as part of a layout.
 type ContentSession struct {
 	ID         string
 	ProviderID string
