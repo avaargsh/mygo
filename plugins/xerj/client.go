@@ -46,10 +46,17 @@ func New(endpoint, index string) (*Client, error) {
 	if !indexName.MatchString(index) {
 		return nil, errors.New("expected an exact index name")
 	}
-	tr := http.DefaultTransport.(*http.Transport).Clone()
-	tr.Proxy = nil
+	// Do not inherit an embedding application's mutable default transport
+	// or routing policy. A nil Proxy makes this an explicit local connection.
+	tr := &http.Transport{
+		DialContext:     (&net.Dialer{Timeout: 3 * time.Second}).DialContext,
+		IdleConnTimeout: 30 * time.Second,
+	}
 	return &Client{index: index, endpoint: strings.TrimSuffix(u.String(), "/") + "/" + index + "/_search", http: &http.Client{Transport: tr, Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}, nil
 }
+
+// CloseIdleConnections releases pooled connections without interrupting requests.
+func (c *Client) CloseIdleConnections() { c.http.CloseIdleConnections() }
 
 // Search submits a bounded lexical query. An empty hit list is not an error.
 func (c *Client) Search(ctx context.Context, query string, limit int) ([]Hit, error) {

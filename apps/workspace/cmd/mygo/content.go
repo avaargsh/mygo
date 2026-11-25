@@ -15,6 +15,9 @@ func builtInContent(dir string) (*core.ContentManager, error) {
 		{ID: "system", Title: "System Info", Open: func() (any, error) { return newSystemSession(), nil }},
 		{ID: "browser", Title: "Browser", Open: func() (any, error) { return &browserSession{}, nil }},
 		{ID: "terminal", Title: "Terminal", Open: func() (any, error) { return &core.TerminalSession{}, nil }},
+		{ID: "search", Title: "Search", Open: func() (any, error) {
+			return &searchSession{endpoint: "http://127.0.0.1:9200"}, nil
+		}},
 		{ID: "files", Title: "Files", Open: func() (any, error) { return &filesSession{}, nil }},
 		{ID: "chat", Title: "Chat", Open: func() (any, error) { return &chatViewSession{}, nil }},
 		{ID: "notes", Title: "Notes", Open: func() (any, error) {

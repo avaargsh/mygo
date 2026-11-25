@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [main, feat/workspace-m0-foundation, test/workspace-native-smoke]
+    branches: [main, feat/workspace-m0-foundation, test/workspace-native-smoke, test/workspace-search-entry]
   workflow_dispatch:
 
 permissions:
@@ -45,12 +45,12 @@ jobs:
           bun install --frozen-lockfile
           bun run build
       - name: Test workspace packages
-        run: xvfb-run -a dbus-run-session -- go test -count=1 ./apps/workspace/...
+        run: xvfb-run -a dbus-run-session -- go test -count=1 ./apps/workspace/... ./plugins/xerj
       - name: Race detection
-        run: go test -race -count=1 ./apps/workspace/core ./apps/workspace/adapters/model ./apps/workspace/adapters/system
+        run: go test -race -count=1 ./apps/workspace/core ./apps/workspace/adapters/model ./apps/workspace/adapters/system ./apps/workspace/cmd/mygo ./plugins/xerj
       - name: Vet and build workspace binary
         run: |
-          go vet ./apps/workspace/...
+          go vet ./apps/workspace/... ./plugins/xerj
           go build -o "$RUNNER_TEMP/mygo-workspace" ./apps/workspace/cmd/mygo
       - name: Prefetch pinned libraries
         run: go run ./internal/prefetch

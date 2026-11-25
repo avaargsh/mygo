@@ -162,6 +162,7 @@ func (s *shell) view(c *ui.Context) {
 			s.commandButton(c, "open-notes", "content.notes", "Notes")
 			s.commandButton(c, "open-browser", "content.browser", "Browser")
 			s.commandButton(c, "open-terminal", "content.terminal", "Terminal")
+			s.commandButton(c, "open-search", "content.search", "Search")
 			s.commandButton(c, "open-files", "content.files", "Files")
 			s.commandButton(c, "open-chat", "content.chat", "Chat")
 			s.commandButton(c, "split-right", "layout.split-right", "Split right")
@@ -299,6 +300,12 @@ func (s *shell) renderContent(c *ui.Context, snapshot core.WorkspaceSnapshot, pa
 		} else {
 			ui.Text(c, "Terminal session unavailable")
 		}
+	case "search":
+		if f, ok := session.Value.(*searchSession); ok {
+			s.renderSearch(c, snapshot, paneID, f)
+		} else {
+			ui.Text(c, "Search session unavailable")
+		}
 	case "files":
 		if files, ok := session.Value.(*filesSession); ok && files != nil {
 			s.renderFiles(c, files)
@@ -406,6 +413,9 @@ func main() {
 			}
 		})
 		s.window.OnClosed(func() {
+			if search := s.searchSession(); search != nil {
+				search.stop()
+			}
 			if ch := s.chatSession(); ch != nil {
 				ch.chat.Cancel()
 				ch.apiKey = ""
