@@ -72,7 +72,17 @@ func (s *shell) renderChat(c *ui.Context, snapshot core.WorkspaceSnapshot, paneI
 		return
 	}
 	state := ch.chat.Snapshot()
-	ui.Text(c, "Model chat").Bold()
+	// Keep the actions in the pane header. In a constrained split, a control
+	// placed below the editor can sit underneath another workspace control.
+	ui.Row(c.Key("chat-actions")).Gap(spaceControl).Wrap().Children(func() {
+		ui.Text(c, "Model chat").Bold()
+		if state.Active {
+			ui.Button(c, "Stop generation").OnClick(func() { ch.chat.Cancel() })
+		} else {
+			ui.PrimaryButton(c, "Send message").Disabled(strings.TrimSpace(ch.draft) == "").OnClick(func() { s.sendChat(ch) })
+			ui.Button(c, "Clear conversation").Disabled(len(state.Turns) == 0).OnClick(func() { s.clearChat(ch) })
+		}
+	})
 	if ch.boundEndpoint == "" {
 		ui.TextInput(c.Key("chat-endpoint"), &ch.endpoint).Label("Chat completions endpoint").Placeholder("https://host/v1/chat/completions")
 		ui.TextInput(c.Key("chat-model"), &ch.modelName).Label("Model name")
@@ -85,16 +95,9 @@ func (s *shell) renderChat(c *ui.Context, snapshot core.WorkspaceSnapshot, paneI
 	if state.Active {
 		c.After(100 * time.Millisecond)
 		ui.Text(c, "Generation active")
-		ui.Button(c, "Stop generation").OnClick(func() { ch.chat.Cancel() })
 	} else {
 		ui.TextInput(c.Key("chat-credential"), &ch.apiKey).Password().MaxLength(8192).Label("API key (optional; cleared on send)")
-		ui.Row(c).Gap(spaceControl).Children(func() {
-			ui.TextArea(c.Key("chat-message"), &ch.draft).Label("Message").Placeholder("Write a message…").Height(72).MinHeight(64).MinWidth(0).Grow(1).MaxLength(8192)
-			ui.Column(c).Gap(4).Children(func() {
-				ui.Button(c, "Send message").Disabled(strings.TrimSpace(ch.draft) == "").OnClick(func() { s.sendChat(ch) })
-				ui.Button(c, "Clear conversation").Disabled(len(state.Turns) == 0).OnClick(func() { s.clearChat(ch) })
-			})
-		})
+		ui.TextArea(c.Key("chat-message"), &ch.draft).Label("Message").Placeholder("Write a message…").Height(72).MinHeight(64).MinWidth(0).MaxLength(8192)
 	}
 	ui.Scroll(c).Grow(1).MinHeight(0).Children(func() {
 		ui.Column(c).Gap(spaceSection).Children(func() {
