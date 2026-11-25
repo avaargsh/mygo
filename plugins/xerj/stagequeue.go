@@ -13,7 +13,11 @@ import (
 // control the roots, node and pinned binary, and keep the staged tree unchanged.
 // The stage is removed at job completion (including cancellation), not on a
 // cancellation request while running. No crash-orphan collection is performed.
-func (q *BuildQueue) SubmitApprovedText(ctx context.Context, workspace string, config AutoindexConfig, sourceRoot, stagingRoot string, datasets map[string][]string) (job *BuildJob, err error) {
+func (q *BuildQueue) SubmitApprovedText(ctx context.Context, workspace string, config AutoindexConfig, sourceRoot, stagingRoot string, datasets map[string][]string) (*BuildJob, error) {
+	return q.submitApprovedText(ctx, workspace, config, sourceRoot, stagingRoot, datasets, nil)
+}
+
+func (q *BuildQueue) submitApprovedText(ctx context.Context, workspace string, config AutoindexConfig, sourceRoot, stagingRoot string, datasets map[string][]string, observed *TextSnapshot) (job *BuildJob, err error) {
 	if ctx == nil || config.Corpus != "" || !autoindexPrefix.MatchString(config.Prefix) || len(datasets) < 1 || len(datasets) > 8 {
 		return nil, errors.New("invalid approved build scope")
 	}
@@ -57,9 +61,14 @@ func (q *BuildQueue) SubmitApprovedText(ctx context.Context, workspace string, c
 	cleanup := func() error { return os.RemoveAll(stage.Root()) }
 	defer func() {
 		if job == nil {
-			err = errors.Join(err, cleanup())
+			if cleanupErr := cleanup(); cleanupErr != nil {
+				err = errors.Join(err, cleanupErr)
+			}
 		}
 	}()
+	if observed != nil && observed.Diff(stage.snapshot).Changed() {
+		return nil, errRebuildDeferred
+	}
 	config.Corpus = stage.Root()
 	config.StateRoot = state
 	expected := make(map[string]TextIndexVerifier, len(datasets))
