@@ -48,8 +48,11 @@ untrusted page options; it does not establish browser storage isolation.
 - cmd/mygo is the native UI composition root. Only the UI thread mutates
   the workspace. The workspace owns the layout and panes; layout leaves and
   pane identities must match. Tab IDs are unique across the workspace. Background services must later marshal commands to that owner.
-- The current two built-in views are static session references; there is no
-  general session manager or background task lifecycle yet.
+- The content manager registers Home, Runtime info and Notes as built-in
+  singleton sessions. Closing a tab leaves the session alive until process
+  exit; multiple views share one session. Unknown providers are rejected and
+  failed opens can be retried. Multiple instances and resourceful session
+  shutdown/suspension contracts are deferred until Browser/Terminal work.
 - Versioned workspace snapshots round-trip layout, panes, tabs and selection;
   invalid or unknown versions are rejected. The desktop state uses validated
   versioned JSON, a 4 MiB cap and same-directory temp-file replacement;
@@ -91,3 +94,24 @@ Full Go 1.27.3 repository builds, the native view test, existing CI,
 actual desktop startup, packaging and the dual-WebView probe remain
 unverified: the local toolchain is Go 1.23.2 and cannot resolve GitHub.
 No native UI or cross-platform crash durability pass is claimed.
+
+## Notes (M2 first slice)
+
+Open Notes from the toolbar, type Markdown source, and click Save note.
+The note is stored as UTF-8 in notes.md next to state.json (1 MiB maximum).
+Layout saving and note saving are independent. Closing and reopening the
+Notes tab in the same process retains unsaved edits; the status area offers
+Save note changes even when its tab is closed. Save before exiting: there is
+no quit confirmation or automatic draft recovery yet. On restart saved
+notes are read when their session is opened or restored. Invalid note data
+is rejected rather than overwritten by opening. This is one local note,
+not a full note library or conflict-aware multi-instance editor.
+
+## M2 validation
+
+On Go 1.23.2 the isolated, standard-library-only core passed 21 tests
+(17 existing and 4 new), race detection and vet. New tests initially
+failed compilation before the implementation. The two new core file
+blob hashes match the locally tested files. Native shell integration and
+its tests were committed but have not been compiled or executed locally.
+The root build still needs Go 1.27.3+ and a reachable dependency source.
