@@ -149,10 +149,10 @@ func readMemory(name string) (uint64, uint64, error) {
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		fields := strings.Fields(scanner.Text())
-		if len(fields) < 3 || fields[1] != "kB" {
+		if len(fields) < 3 || fields[2] != "kB" {
 			continue
 		}
-		value, err := strconv.ParseUint(fields[1-1], 10, 64)
+		value, err := strconv.ParseUint(fields[1], 10, 64)
 		if err != nil {
 			return 0, 0, fmt.Errorf("invalid memory counter: %w", err)
 		}
