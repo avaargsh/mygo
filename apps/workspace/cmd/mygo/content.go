@@ -12,6 +12,7 @@ func builtInContent(dir string) (*core.ContentManager, error) {
 	for _, provider := range []core.ContentProvider{
 		{ID: "home", Title: "Home", Open: func() (any, error) { return nil, nil }},
 		{ID: "runtime", Title: "Runtime info", Open: func() (any, error) { return nil, nil }},
+		{ID: "system", Title: "System Info", Open: func() (any, error) { return newSystemSession(), nil }},
 		{ID: "browser", Title: "Browser", Open: func() (any, error) { return &browserSession{}, nil }},
 		{ID: "terminal", Title: "Terminal", Open: func() (any, error) { return &core.TerminalSession{}, nil }},
 		{ID: "files", Title: "Files", Open: func() (any, error) { return &filesSession{}, nil }},
