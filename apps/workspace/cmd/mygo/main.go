@@ -153,6 +153,7 @@ func (s *shell) view(c *ui.Context) {
 			}
 			ui.Button(c.Key("open-home"), "Home").OnClick(func() { s.open("home") })
 			ui.Button(c.Key("open-runtime"), "Runtime info").OnClick(func() { s.open("runtime") })
+			ui.Button(c.Key("open-system"), "System Info").OnClick(func() { s.open("system") })
 			ui.Button(c.Key("open-notes"), "Notes").OnClick(func() { s.open("notes") })
 			ui.Button(c.Key("open-browser"), "Browser").OnClick(func() { s.open("browser") })
 			ui.Button(c.Key("open-terminal"), "Terminal").OnClick(func() { s.open("terminal") })
@@ -267,6 +268,12 @@ func (s *shell) renderContent(c *ui.Context, snapshot core.WorkspaceSnapshot, pa
 	case "home":
 		ui.Text(c, "Your Personal AI Workspace").FontSize(24).Bold()
 		ui.Text(c, "Open Runtime info to inspect this running application.")
+	case "system":
+		if system, ok := session.Value.(*systemSession); ok && system != nil {
+			s.renderSystem(c, system)
+		} else {
+			ui.Text(c, "System metrics session unavailable")
+		}
 	case "runtime":
 		ui.Text(c, "Runtime info").FontSize(20).Bold()
 		ui.Text(c, fmt.Sprintf("Platform: %s/%s", runtime.GOOS, runtime.GOARCH))
