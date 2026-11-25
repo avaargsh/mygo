@@ -64,6 +64,10 @@ func (m *Manager) Begin(workspace, index string) (Generation, error) {
 
 // BeginSet reserves all exact indices as one generation (maximum eight).
 func (m *Manager) BeginSet(workspace string, indices []string) (Generation, error) {
+	return m.beginSet(workspace, indices, "")
+}
+
+func (m *Manager) beginSet(workspace string, indices []string, freshPrefix string) (Generation, error) {
 	if strings.TrimSpace(workspace) == "" || len(workspace) > 256 {
 		return Generation{}, errors.New("invalid workspace identity")
 	}
@@ -87,6 +91,11 @@ func (m *Manager) BeginSet(workspace string, indices []string) (Generation, erro
 	defer m.mu.Unlock()
 	if m.manifestFault {
 		return Generation{}, ErrManifestUnavailable
+	}
+	if freshPrefix != "" {
+		if err := m.checkPrefixLocked(freshPrefix); err != nil {
+			return Generation{}, err
+		}
 	}
 	for _, index := range names {
 		if _, ok := m.reserved[index]; ok {
