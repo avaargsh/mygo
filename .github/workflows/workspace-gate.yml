@@ -1,0 +1,60 @@
+name: Workspace Gate
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main, feat/workspace-m0-foundation, test/workspace-native-smoke]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: workspace-gate-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  workspace-linux:
+    name: Workspace Linux build and tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      GOTOOLCHAIN: local
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.4'
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - name: Verify toolchain and modules
+        run: |
+          git rev-parse HEAD
+          go version
+          test "$(go env GOVERSION)" = go1.27.4
+          go mod download
+          go mod verify
+      - name: Install desktop runtime dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-0 libayatana-appindicator3-1 xvfb xauth dbus-x11 libgl1-mesa-dri libglx-mesa0 libegl-mesa0
+      - name: Build embedded JavaScript packages
+        run: |
+          bun install --frozen-lockfile
+          bun run build
+      - name: Test workspace packages
+        run: xvfb-run -a dbus-run-session -- go test -count=1 ./apps/workspace/...
+      - name: Race detection
+        run: go test -race -count=1 ./apps/workspace/core ./apps/workspace/adapters/model ./apps/workspace/adapters/system
+      - name: Vet and build workspace binary
+        run: |
+          go vet ./apps/workspace/...
+          go build -o "$RUNNER_TEMP/mygo-workspace" ./apps/workspace/cmd/mygo
+      - name: Prefetch pinned libraries
+        run: go run ./internal/prefetch
+      - name: Run workspace native E2E
+        env:
+          MYGO_E2E: 1
+        run: xvfb-run -a dbus-run-session -- go test -v -count=1 -timeout=5m -run '^TestWorkspaceNative' ./internal/e2e
