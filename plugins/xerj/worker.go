@@ -16,23 +16,27 @@ var (
 type BuildState string
 
 const (
-	BuildQueued    BuildState = "QUEUED"
-	BuildRunning   BuildState = "RUNNING"
-	BuildCanceling BuildState = "CANCELING"
-	BuildSucceeded BuildState = "SUCCEEDED"
-	BuildFailed    BuildState = "FAILED"
-	BuildCanceled  BuildState = "CANCELED"
+	BuildQueued      BuildState = "QUEUED"
+	BuildRunning     BuildState = "RUNNING"
+	BuildCanceling   BuildState = "CANCELING"
+	BuildSucceeded   BuildState = "SUCCEEDED"
+	BuildFailed      BuildState = "FAILED"
+	BuildCanceled    BuildState = "CANCELED"
+	BuildInterrupted BuildState = "INTERRUPTED"
 )
 
 // BuildQueue is an application-owned, process-local FIFO with one executing
 // job at a time. Capacity counts queued and active jobs. Do not copy it.
 // It does not own a goroutine; the application drives RunNext off the UI thread.
 type BuildQueue struct {
-	mu       sync.Mutex
-	manager  *Manager
-	capacity int
-	pending  []*BuildJob
-	active   *BuildJob
+	mu           sync.Mutex
+	manager      *Manager
+	capacity     int
+	pending      []*BuildJob
+	active       *BuildJob
+	journalPath  string
+	journalFault bool
+	records      []BuildRecord
 }
 
 // BuildJob is an opaque handle. Terminal jobs are not retained by the queue.
@@ -84,6 +88,19 @@ func (q *BuildQueue) submit(workspace, prefix string, run func(context.Context) 
 	}
 	q.mu.Lock()
 	defer q.mu.Unlock()
+	if q.journalFault {
+		return nil, ErrBuildJournalUnavailable
+	}
+	if q.journalPath != "" {
+		for _, r := range q.records {
+			if r.Prefix == prefix {
+				return nil, ErrBuildDuplicate
+			}
+		}
+		if len(q.records) >= maxBuildHistory {
+			return nil, ErrBuildQueueFull
+		}
+	}
 	duplicate := func(j *BuildJob) bool { return j.workspace == workspace || j.prefix == prefix }
 	n := len(q.pending)
 	if q.active != nil {
@@ -101,6 +118,9 @@ func (q *BuildQueue) submit(workspace, prefix string, run func(context.Context) 
 		return nil, ErrBuildQueueFull
 	}
 	j := &BuildJob{queue: q, workspace: workspace, prefix: prefix, run: run, state: BuildQueued, done: make(chan struct{})}
+	if err := q.recordLocked(j, BuildQueued); err != nil {
+		return nil, err
+	}
 	q.pending = append(q.pending, j)
 	return j, nil
 }
@@ -116,6 +136,10 @@ func (q *BuildQueue) RunNext(ctx context.Context) (bool, error) {
 		return false, err
 	}
 	q.mu.Lock()
+	if q.journalFault {
+		q.mu.Unlock()
+		return false, ErrBuildJournalUnavailable
+	}
 	if q.active != nil {
 		q.mu.Unlock()
 		return false, ErrBuildWorkerBusy
@@ -129,6 +153,10 @@ func (q *BuildQueue) RunNext(ctx context.Context) (bool, error) {
 		return false, err
 	}
 	j := q.pending[0]
+	if err := q.recordLocked(j, BuildRunning); err != nil {
+		q.mu.Unlock()
+		return false, err
+	}
 	q.pending[0] = nil
 	q.pending = q.pending[1:]
 	jobctx, cancel := context.WithCancel(ctx)
@@ -146,6 +174,10 @@ func (q *BuildQueue) RunNext(ctx context.Context) (bool, error) {
 		if errors.Is(err, context.Canceled) && !errors.Is(err, ErrManifestUnavailable) {
 			state = BuildCanceled
 		}
+	}
+	if persistErr := q.recordLocked(j, state); persistErr != nil {
+		err = errors.Join(err, persistErr)
+		state = BuildInterrupted
 	}
 	j.finishLocked(state, err)
 	q.active = nil
@@ -171,6 +203,9 @@ func (j *BuildJob) Cancel() bool {
 	case BuildQueued:
 		for i, p := range q.pending {
 			if p == j {
+				if err := q.recordLocked(j, BuildCanceled); err != nil {
+					return false
+				}
 				copy(q.pending[i:], q.pending[i+1:])
 				q.pending[len(q.pending)-1] = nil
 				q.pending = q.pending[:len(q.pending)-1]
@@ -179,6 +214,10 @@ func (j *BuildJob) Cancel() bool {
 			}
 		}
 	case BuildRunning:
+		if err := q.recordLocked(j, BuildCanceling); err != nil {
+			j.cancel()
+			return false
+		}
 		j.state = BuildCanceling
 		j.cancel()
 		return true
