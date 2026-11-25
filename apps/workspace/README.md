@@ -324,3 +324,38 @@ race and vet passed. Incremental delivery was explicitly verified with a
 server that waited for the consumer callback before sending the finish event.
 Remote blobs match the locally tested sources. No live model, native Chat
 Tab or complete Go 1.27.4 cloud-host build was verified.
+
+
+## Chat session and native view (M3 third slice)
+
+Open Chat from the toolbar or Commands. Enter a full Chat Completions endpoint,
+model name, optional API key, and message, then explicitly choose Send message.
+Opening/restoring the tab makes no network request. Only the prompt and prior
+completed chat turns are sent to the selected endpoint. No notes, files,
+browser, terminal, or system context is attached. Once a send is accepted,
+the endpoint and model are bound to the conversation; clear it to switch.
+The password field is cleared after accepting a send and on window close.
+No credential or chat history is persisted; clearing a Go string is not
+a guarantee of secure memory erasure.
+
+The concurrent model.ChatSession supports one worker per session, snapshots,
+incremental text, cancellation with a stopping state, and a terminal outcome.
+Failed/canceled turns retain partial text locally but are excluded from future
+requests. Completion requires transport success with matching delivered text
+and supported finish reason. Limits: 32 turns, 32 KiB prompt, 256 KiB reply,
+512 KiB outgoing history content (the transport also enforces its JSON limit).
+The view polls active snapshots at 100 ms intervals, with no direct UI callback
+from the network worker. Closing a tab retains its session. Hidden generation
+can be stopped from the status area; closing the window requests cancellation.
+Chat is a singleton, memory-only, text-only conversation, not a tool-executing
+Agent. No automatic retries, reconnection, conversation persistence, model
+profiles, keychain integration, or token accounting.
+
+Evidence: Go 1.23.2 isolated model package, RED compilation failure before
+ChatSession implementation and GREEN after. 15 top-level tests passed
+(11 existing transport tests and 4 ChatSession tests), race and vet passed.
+The new chat.go/chat_test.go remote blobs match locally tested sources.
+One test uses the actual SSE Client with a local HTTP server; cancellation
+and history tests use controlled stream functions. Native Chat UI tests
+are committed but not executed; no external model endpoint or full
+Go 1.27.4 cloud-host desktop build is claimed.
