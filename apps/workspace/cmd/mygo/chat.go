@@ -88,7 +88,7 @@ func (s *shell) renderChat(c *ui.Context, snapshot core.WorkspaceSnapshot, paneI
 		ui.Button(c, "Stop generation").OnClick(func() { ch.chat.Cancel() })
 	} else {
 		ui.TextInput(c.Key("chat-credential"), &ch.apiKey).Password().MaxLength(8192).Label("API key (optional; cleared on send)")
-		ui.TextArea(c.Key("chat-message"), &ch.draft).Label("Message").Height(72).MaxLength(8192)
+		ui.TextArea(c.Key("chat-message"), &ch.draft).Label("Message").Placeholder("Write a message…").Height(72).MinHeight(64).MaxLength(8192)
 		ui.Row(c).Gap(spaceControl).Children(func() {
 			ui.Button(c, "Send message").Disabled(strings.TrimSpace(ch.draft) == "").OnClick(func() { s.sendChat(ch) })
 			ui.Button(c, "Clear conversation").Disabled(len(state.Turns) == 0).OnClick(func() { s.clearChat(ch) })

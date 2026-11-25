@@ -56,7 +56,19 @@ def click(label):
 
 
 def enter(label, value):
-    click(label)
+    node = find(label)
+    bounds = find(label, component=True)
+    # Click the first editable line, not the middle of a multiline editor.
+    dx = min(16, bounds.width // 2)
+    dy = min(12, bounds.height // 2)
+    xdotool("mousemove", str(bounds.x + dx), str(bounds.y + dy), "click", "1")
+    deadline = time.monotonic() + 3
+    focused = False
+    while time.monotonic() < deadline:
+        if find(label).getState().contains(pyatspi.STATE_FOCUSED):
+            focused = True
+            break
+        time.sleep(0.05)
     xdotool("key", "--clearmodifiers", "ctrl+a")
     xdotool("type", "--clearmodifiers", "--delay", "5", value)
     deadline = time.monotonic() + 3
@@ -65,7 +77,10 @@ def enter(label, value):
         if actual == value:
             return
         time.sleep(0.05)
-    raise RuntimeError(f"Input {label!r} value was {actual!r}, expected {value!r}")
+    raise RuntimeError(
+        f"Input {label!r} ({node.getRoleName()}, bounds={bounds}, focused={focused}) "
+        f"value was {actual!r}, expected {value!r}"
+    )
 
 
 NOTE = "Workspace note acceptance marker"
