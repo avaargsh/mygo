@@ -27,13 +27,10 @@ func applyTheme(mode string) {
 }
 
 func workspaceTheme(c *ui.Context) *ui.Theme {
-	base := ui.LightTheme()
-	if mygo.Theme.IsDark() {
-		base = ui.DarkTheme()
-	}
-	// Preserve platform text scale and contrast preferences. The workspace
-	// uses its own accent only inside the product's themed subtree.
-	t := base.WithPreferences(c.Preferences()).WithAccent(ui.Hex("#10a37f"))
+	// The context already resolves system light/dark and accessibility
+	// preferences. Reuse it rather than calling the native main loop during
+	// a render, which would block a headless UI tester.
+	t := c.Theme().WithAccent(ui.Hex("#10a37f"))
 	t.Radius = radiusPane
 	t.Spacing = 4
 	return t
