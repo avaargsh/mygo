@@ -31,6 +31,14 @@ func (m *Manager) checkPrefixLocked(prefix string) error {
 }
 
 func (m *Manager) buildTextSet(ctx context.Context, workspace, prefix string, expected map[string]TextIndexVerifier, build func(context.Context, BuildTarget) error) error {
+	revision, err := m.captureRevision(workspace)
+	if err != nil {
+		return err
+	}
+	return m.buildTextSetAt(ctx, workspace, prefix, expected, build, revision)
+}
+
+func (m *Manager) buildTextSetAt(ctx context.Context, workspace, prefix string, expected map[string]TextIndexVerifier, build func(context.Context, BuildTarget) error, revision sourceTicket) error {
 	if ctx == nil || build == nil || !autoindexPrefix.MatchString(prefix) || len(expected) == 0 || len(expected) > 8 || strings.TrimSpace(workspace) == "" || len(workspace) > 256 {
 		return errors.New("invalid pipeline configuration")
 	}
@@ -46,6 +54,10 @@ func (m *Manager) buildTextSet(ctx context.Context, workspace, prefix string, ex
 	}
 	sort.Strings(names)
 	m.mu.Lock()
+	if m.revisions[workspace] != revision.revision {
+		m.mu.Unlock()
+		return ErrStaleGeneration
+	}
 	err := m.checkPrefixLocked(prefix)
 	m.mu.Unlock()
 	if err != nil {
@@ -61,7 +73,7 @@ func (m *Manager) buildTextSet(ctx context.Context, workspace, prefix string, ex
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	ticket, err := m.beginSet(workspace, names, prefix)
+	ticket, err := m.beginSetAt(workspace, names, prefix, &revision)
 	if err != nil {
 		return err
 	}
