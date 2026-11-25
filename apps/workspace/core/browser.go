@@ -27,28 +27,3 @@ func BrowserAddress(input string) (string, error) {
 	}
 	return u.String(), nil
 }
-
-// SessionOwner chooses one visible pane for a singleton native resource.
-// Prefer the focused pane, then the first visible view in layout order.
-func SessionOwner(s WorkspaceSnapshot, sessionID string) string {
-	visible := func(id string) bool {
-		p := s.Panes[id]
-		for _, t := range p.Tabs {
-			if t.ID == p.ActiveTab && t.SessionID == sessionID {
-				return true
-			}
-		}
-		return false
-	}
-	if visible(s.ActivePane) {
-		return s.ActivePane
-	}
-	var ids []string
-	leafIDs(s.Layout, &ids)
-	for _, id := range ids {
-		if visible(id) {
-			return id
-		}
-	}
-	return ""
-}

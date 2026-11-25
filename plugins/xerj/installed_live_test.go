@@ -3,6 +3,7 @@ package xerj
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"os"
@@ -65,7 +66,7 @@ func exerciseInstalledFlow(t *testing.T, endpoint, binary, digest, suffix, prefi
 	for i, marker := range []string{installedMarkerA, installedMarkerB} {
 		p := prefix + []string{"a", "b"}[i]
 		index := p + "-" + suffix
-		if err := os.WriteFile(filepath.Join(source, name), []byte(marker+"\n"), 0600); err != nil {
+		if err := os.WriteFile(filepath.Join(source, name), []byte(marker), 0600); err != nil {
 			t.Fatal(err)
 		}
 		if i == 1 {
@@ -143,4 +144,18 @@ func exerciseInstalledFlow(t *testing.T, endpoint, binary, digest, suffix, prefi
 		t.Fatal("historical reservation lost")
 	}
 	t.Log("persistent reopen preserved history and fenced search")
+}
+
+// TestLiveInstalledNormalizedBytesRejected checks the separately built probe
+ // whose original bytes include a newline. Never authorize transformed bytes.
+func TestLiveInstalledNormalizedBytesRejected(t *testing.T) {
+	if os.Getenv("MYGO_XERJ_ACCEPTANCE") != "1" || os.Getenv("MYGO_XERJ_NORMALIZED_PROBE") != "1" {
+		t.Skip("requires the disposable acceptance probe")
+	}
+	digest := sha256.Sum256([]byte(installedMarkerA+"\n"))
+	v := TextIndexVerifier{Expected: map[string]string{"mygo-xerj-fixture.txt": hex.EncodeToString(digest[:])}}
+	err := v.Verify(context.Background(), BuildTarget{Workspace:"probe", Index:"mygoslugprobe-docs", Endpoint:os.Getenv("MYGO_XERJ_ENDPOINT"), Generation:1})
+	if err == nil || err.Error() != "section content mismatch" {
+		t.Fatalf("expected byte mismatch, got %v", err)
+	}
 }
