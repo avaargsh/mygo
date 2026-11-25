@@ -239,3 +239,11 @@ The service does not perform authorization, start the engine, own the worker or 
     // Present reply.State; render reply.Hits as plain text.
 
 TestWorkspaceSearchStates, TestWorkspaceSearchDisabledAndInvalid and TestWorkspaceSearchDropsCanceledReply cover presentation behavior using a local interface double. TestWorkspaceSearchServiceManager is a repository integration test with the real Manager and an HTTP fixture. Native search panel, typed IPC, service lifecycle wiring and installed XERJ acceptance are separate gates.
+
+## UI search controller
+
+NewSearchController(service) wraps one authorized WorkspaceSearchService with a single-worker, latest-request-wins state machine. A nil or disabled service exposes DISABLED; an enabled service starts IDLE. Submit(query, limit) replaces the pending request, clears previous hits, cancels active work cooperatively, and shows LOADING (or INVALID_REQUEST without dispatch). At most one active and one latest pending query are retained. Cancel discards pending and in-flight results; Close permanently disables the controller and clears hits.
+
+Run controller.Serve(lifetimeContext, notify) in one application-owned worker goroutine. The optional notify callback is a short thread-safe redraw signal, not a result payload. MyGo views should request a redraw using a supported thread-safe window update/invalidation API, then call controller.Snapshot() on the UI thread at render time. Submit and Cancel handlers also request redraws. Snapshot returns a copied hit slice. Do not capture a stale result in an asynchronously queued UI callback. No polling or per-request goroutine is needed. Lifetime cancellation permanently closes the controller; the owner must join the worker off the UI thread and handle its exit. Call Close before changing workspace or authorization and discard already rendered content. A caller must still clear/revalidate results when source authorization or the accepted source revision changes: the controller does not subscribe to index invalidation or automatically remove already rendered text.
+
+The controller is not a GUI, IPC service or authorization boundary. It does not automatically retry, open files or execute retrieved content. Native UI wiring, supported platform builds and installed-engine acceptance remain separate gates.
