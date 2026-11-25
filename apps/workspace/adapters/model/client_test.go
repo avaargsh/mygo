@@ -112,3 +112,21 @@ func TestClientHonorsCanceledContext(t *testing.T) {
 		t.Fatalf("expected cancellation, got %v", err)
 	}
 }
+
+func TestClientRejectsToolAndLegacyFunctionResponses(t *testing.T) {
+	for _, extra := range []string{`,"tool_calls":[{"id":"call-1","type":"function"}]`, `,"function_call":{"name":"unsupported"}`} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"text"` + extra + `},"finish_reason":"stop"}]}`))
+		}))
+		c, err := NewClient(server.URL+"/v1/chat/completions", "model")
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = c.Complete(context.Background(), "", []Message{{Role: "user", Content: "hello"}})
+		c.Close()
+		server.Close()
+		if err == nil {
+			t.Fatal("unsupported tool or function response accepted")
+		}
+	}
+}
