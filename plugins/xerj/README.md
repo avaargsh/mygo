@@ -116,4 +116,12 @@ DiscoverIndices(ctx, endpoint, prefix) lists index names through the documented 
 
 Use an exclusively owned local node. Before a build, check that the fresh prefix has no existing datasets. After a successful CLI build, compare the returned names with an independently approved exact set using MatchIndexSet(discovered, expected). Empty, unexpected, duplicate or missing sets cannot pass this gate. Then independently verify the source content per dataset. A catalog listing cannot establish source authorization, prefix ownership or completeness; do not derive the expected set from the same untrusted listing.
 
-These are separate trusted-application primitives, not an automatic pre/post build gate. The existing Manager still publishes one exact index per workspace generation. Atomic publication of multiple datasets, search fan-out, multi-format content validation and automatic build integration remain unimplemented. See https://xerj.org/llms-full.txt for the CAT endpoint and prefix naming contract.
+These are separate trusted-application primitives, not an automatic pre/post build gate. Manager.BeginSet now supports atomic binding/publication of an explicitly supplied set and Manager.Search queries each exact index. Multi-format content validation and automatic build integration remain unimplemented. See https://xerj.org/llms-full.txt for the CAT endpoint and prefix naming contract.
+
+## Multi-index workspace generations
+
+Manager.BeginSet(workspace, indices) reserves 1–8 exact names as one generation; all names must be distinct and unreserved. Begin remains the single-index convenience API. A trusted caller must independently verify every dataset before Publish. Rebuild remains a single-index coordinator; multi-dataset automatic orchestration is not implemented.
+
+Manager.Search queries each bound exact index sequentially under one five-second context budget and returns at most the requested global limit (20 maximum). Results are interleaved round-robin in sorted index-name order, preserving per-index order and adding the source index to Hit. This is not global relevance ranking or deduplication. Any request failure discards all hits; a superseding generation also discards the entire result.
+
+The persistent manifest now writes version 2 with an indices array per binding and accepts version 1 on reopen. The next successful transition writes version 2; old readers cannot read v2. As before, reopen retains reservations and generations but marks bindings FAILED until a new verified generation is built. Back up the manifest before downgrading. Atomicity is within the application Manager and its existing persistence contract, not across engine mutations, processes or power loss.
