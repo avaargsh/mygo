@@ -205,3 +205,22 @@ BuildQueue.WatchAndRebuildText connects the fixed approved-text polling loop to 
 When an observed change stabilizes, the controller stages the approved files and compares the exact staged digests to the observed snapshot before queue admission. A mismatch discards the stage and defers to a subsequent sample. A temporarily full queue or occupied workspace also defers admission while retaining the dirty notification; intervening observed changes reset the stability window and invalidate prior revisions. Journal faults, exhausted history and other non-deferred errors stop the controller. Cleanup errors are not swallowed as ordinary deferrals.
 
 The application must independently run BuildQueue.Serve (or dispatch RunNext), observe job outcomes, and own both lifetimes. This does not initialize an unchanged corpus, retry a failed execution, eagerly cancel a stale running job or bypass source revision checks. The queue retains its existing capacity bounds; this is a polling controller with deferred admission, not a durable scheduler. A stopped watcher does not guarantee source freshness: explicitly invalidate before relying on subsequent search, stop and join the loops before changing approved scope, and reauthorize new inputs. Changes between samples or after staging may not be immediately detected. Real engine acceptance, source ownership and stage-cleanup assumptions still apply.
+
+## Installed-engine lifecycle acceptance gate
+
+Unlike TestLiveSearch (read-only, externally indexed fixture), TestLiveInstalledFlow exercises the actual pinned autoindex subprocess via the application queue. It creates synthetic approved and unapproved files, stages only the approved file, builds and independently verifies two fresh generations, queries each after its staging directory has been removed, rejects retrieval between invalidation and rebuild, then reopens the persistent Manager and status journal and checks that reservations/history survive while search is fenced. The reopen is a logical owner reopen, not a process-crash or power-loss test.
+
+Prerequisites: a dedicated disposable numeric-loopback HTTP node with no other users, launched manually from a pinned, independently checksum-verified XERJ release; network/feedback disabled as appropriate in the environment; the same absolute executable path and trusted digest for the test. Inspect the pinned CLI help and establish the expected dataset slug for a single plain-text fixture separately. Autoindex derives dataset names from content clustering rather than the source directory name; do not guess a slug, authorize whatever the test discovers, or weaken exact catalog/body verification to force a pass.
+
+From the MyGo checkout at the candidate commit, with its pinned Go toolchain:
+
+    export MYGO_XERJ_ACCEPTANCE=1
+    export MYGO_XERJ_ENDPOINT=http://127.0.0.1:9200
+    export MYGO_XERJ_BINARY=/absolute/path/to/verified/xerj
+    export MYGO_XERJ_SHA256=YOUR_INDEPENDENTLY_VERIFIED_SHA256
+    export MYGO_XERJ_DATASET_SUFFIX=YOUR_VERIFIED_FIXTURE_SLUG
+    go test -race -count=1 -timeout=10m -run '^TestLiveInstalledFlow$' -v ./plugins/xerj
+
+Replace all example values before running. Use the actual disposable node port. The test creates two random fresh prefixes, prints them and the digest, and leaves the engine indices for inspection. Stop and dispose of the dedicated node/data after collecting evidence; it does not install software, launch a server, delete engine indices or use any real workspace data. Missing required configuration fails the opted-in test rather than skipping. Ordinary package tests skip it unless explicitly enabled.
+
+Record candidate Git SHA, Go version, XERJ version and trusted SHA-256, OS/architecture, expected fixture slug, exact generated prefixes, exit code and complete test output. A failure at catalog, content verification, passage retrieval or post-cleanup retrieval is a compatibility blocker, not permission to bypass verification. TestInstalledFlowFixture runs the same lifecycle against a POSIX test executable and simulated HTTP server; this proves the acceptance harness, not upstream behavior. Real-engine acceptance, automatic watcher-to-worker installed integration, UI and full repository CI are separate gates.
