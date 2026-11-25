@@ -48,6 +48,9 @@ jobs:
           tar -xOzf mygo-workspace-0.1.0-linux-amd64.tar.gz copyright | cmp "$notice" -
           go version -m ./mygo-workspace > GO-BUILD-INFO.txt
           cat GO-BUILD-INFO.txt
+          # A changed binary inventory needs a new notice review.
+          awk '$1 == "dep" { print $2, $3, $4 }' GO-BUILD-INFO.txt | LC_ALL=C sort > "$tmp/go-modules"
+          diff -u ../../../../linux-go-notices.modules "$tmp/go-modules"
           sha256sum mygo-workspace_0.1.0_amd64.deb mygo-workspace-0.1.0-linux-amd64.tar.gz install.sh GO-BUILD-INFO.txt > SHA256SUMS
           sha256sum -c SHA256SUMS
       - name: Verify installed user application
