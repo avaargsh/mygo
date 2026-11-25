@@ -156,6 +156,7 @@ func (s *shell) view(c *ui.Context) {
 			ui.Button(c.Key("open-notes"), "Notes").OnClick(func() { s.open("notes") })
 			ui.Button(c.Key("open-browser"), "Browser").OnClick(func() { s.open("browser") })
 			ui.Button(c.Key("open-terminal"), "Terminal").OnClick(func() { s.open("terminal") })
+			ui.Button(c.Key("open-files"), "Files").OnClick(func() { s.open("files") })
 			ui.Button(c.Key("split-right"), "Split right").OnClick(func() { s.split(core.Horizontal) })
 			ui.Button(c.Key("split-down"), "Split down").OnClick(func() { s.split(core.Vertical) })
 			ui.Button(c.Key("move-next"), "Move tab to next pane").Disabled(len(snapshot.Panes) < 2 || active.ActiveTab == "").OnClick(s.moveNext)
@@ -185,6 +186,9 @@ func (s *shell) view(c *ui.Context) {
 			if t.State() == core.TerminalStopping {
 				ui.Text(c, "Hidden terminal stopping…").FontSize(fontSmall)
 			}
+		}
+		if f := s.filesSession(); f != nil && f.browser != nil && core.SessionOwner(snapshot, "files") == "" {
+			ui.Button(c.Key("revoke-hidden-files"), "Revoke hidden folder access").OnClick(func() { s.fileResult(f.close()) })
 		}
 		if s.status != "" {
 			ui.Text(c, s.status)
@@ -280,6 +284,12 @@ func (s *shell) renderContent(c *ui.Context, snapshot core.WorkspaceSnapshot, pa
 		} else {
 			ui.Text(c, "Terminal session unavailable")
 		}
+	case "files":
+		if files, ok := session.Value.(*filesSession); ok && files != nil {
+			s.renderFiles(c, files)
+		} else {
+			ui.Text(c, "Files session unavailable")
+		}
 	case "notes":
 		n, ok := session.Value.(*core.Note)
 		if !ok || n == nil {
@@ -342,6 +352,11 @@ func main() {
 			Content: ui.View(s.view),
 		})
 		s.window.OnClosed(func() {
+			if f := s.filesSession(); f != nil {
+				if err := f.close(); err != nil {
+					log.Print("files shutdown: ", err)
+				}
+			}
 			if t := s.terminalSession(); t != nil {
 				if err := t.Stop(); err != nil {
 					log.Print("terminal shutdown: ", err)
