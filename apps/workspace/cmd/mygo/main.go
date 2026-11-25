@@ -15,17 +15,19 @@ import (
 )
 
 type shell struct {
-	workspace    *core.Workspace
-	window       *mygo.Window
-	content      *core.ContentManager
-	sequence     int
-	status       string
-	statePath    string
-	theme        string
-	dirty        bool
-	commands     *core.CommandRegistry
-	paletteOpen  bool
-	paletteQuery string
+	workspace       *core.Workspace
+	window          *mygo.Window
+	content         *core.ContentManager
+	sequence        int
+	status          string
+	statePath       string
+	theme           string
+	dirty           bool
+	commands        *core.CommandRegistry
+	paletteOpen     bool
+	paletteQuery    string
+	closePromptOpen bool
+	sessionEnding   bool
 }
 
 func (s *shell) nextID(prefix string) string {
@@ -362,13 +364,25 @@ func main() {
 	applyTheme(theme)
 	if fresh {
 		s.open("home")
+		s.dirty = false // The default Home tab is recreated on an untouched first run.
 	}
+	mygo.App.OnBeforeQuit(func(e *mygo.QuitEvent) {
+		if e.SessionEnding {
+			s.sessionEnding = true
+		}
+	})
 	mygo.App.WhenReady(func() {
 		s.window = mygo.NewWindow(mygo.WindowOptions{
 			Title:   "MyGo Workspace",
 			Width:   1000,
 			Height:  680,
 			Content: ui.View(s.view),
+		})
+		s.window.OnClose(func(e *mygo.CloseEvent) {
+			if !s.confirmClose(mygo.Dialog.Message) {
+				e.PreventDefault()
+				s.window.Invalidate()
+			}
 		})
 		s.window.OnClosed(func() {
 			if ch := s.chatSession(); ch != nil {

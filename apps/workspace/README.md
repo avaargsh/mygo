@@ -24,7 +24,10 @@ not sampled CPU utilization or a simulated system monitor.
 
 Choose Light, Dark or System, click Save workspace, quit and reopen.
 The saved layout, pane focus, tab order, active tabs and theme should return.
-Unsaved changes are explicitly marked; save before quitting. New IDs avoid
+Unsaved changes are explicitly marked. Closing the window or quitting asks whether
+to save or discard layout and note changes, including edits in a closed Notes
+tab. A failed save keeps the window open. An OS shutdown is not cancelable;
+save before ending your session. New IDs avoid
 collisions with restored IDs. The app writes state.json under MyGoWorkspace
 in os.UserConfigDir(). A corrupt or unsupported file stops startup without
 overwriting it. To recover manually, back up the file and move it aside.
