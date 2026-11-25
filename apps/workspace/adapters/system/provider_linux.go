@@ -202,6 +202,7 @@ func readNetwork(name string) (uint64, uint64, int, error) {
 	defer f.Close()
 	var received, sent uint64
 	interfaces := 0
+	var ok bool
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		line := scanner.Text()
