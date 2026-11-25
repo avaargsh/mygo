@@ -212,7 +212,7 @@ Go 1.27.4 cloud-host environment, run:
     bash apps/workspace/verify-cloud.sh
 
 This records the HEAD and Go version, verifies dependencies, executes
-Workspace tests and Core race tests, runs vet, builds the entire repository
+Workspace tests and Core/system-adapter race tests, runs vet, builds the entire repository
 and emits the desktop binary and log in a temporary evidence directory.
 Set MYGO_FULL_TEST=1 to additionally run the entire repository test suite.
 No package install, checkout reset or automatic desktop launch occurs.
