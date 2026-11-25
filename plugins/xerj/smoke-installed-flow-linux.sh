@@ -50,5 +50,12 @@ names = [r["index"] for r in json.load(sys.stdin) if "mygoslugprobe" in r["index
 assert names == ["mygoslugprobe-docs"], names
 '
 echo "Verified independent fixture suffix: docs"
+# Inspect only this known synthetic document, never any user index.
+# The request mirrors TextIndexVerifier; do not change its checks.
+curl -fsS --max-time 5 -H 'Content-Type: application/json' \
+  -X POST "$endpoint/mygoslugprobe-docs/_search" \
+  --data '{"size":1,"track_total_hits":true,"query":{"match_all":{}},"_source":["ax_path","body"]}' \
+  | python3 -c 'import json,sys; print("Synthetic verifier response:",json.dumps(json.load(sys.stdin),ensure_ascii=True))'
+
 MYGO_XERJ_ACCEPTANCE=1 MYGO_XERJ_ENDPOINT="$endpoint" MYGO_XERJ_BINARY="$out/xerj" MYGO_XERJ_SHA256="$digest" MYGO_XERJ_DATASET_SUFFIX=docs \
   go test -race -count=1 -timeout=10m -run '^TestLiveInstalledFlow$' -v ./plugins/xerj
