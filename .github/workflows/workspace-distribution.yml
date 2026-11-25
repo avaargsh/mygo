@@ -2,7 +2,7 @@ name: Workspace Distribution
 
 on:
   push:
-    branches: [feat/workspace-distribution, test/workspace-linux-notices]
+    branches: [main, test/workspace-linux-notices]
   workflow_dispatch:
 
 permissions:
@@ -66,7 +66,6 @@ jobs:
       - name: Test Debian package writer
         run: go test ./cmd/mygo -run '^TestDebCopyright$' -count=1
       - name: Verify apt-installed application
-        if: github.ref == 'refs/heads/test/workspace-linux-notices'
         run: |
           deb=apps/workspace/cmd/mygo/dist/linux-amd64/mygo-workspace_0.1.0_amd64.deb
           test "$(dpkg-query -W -f='${db:Status-Status}' mygo-workspace 2>/dev/null || true)" != installed
@@ -79,7 +78,7 @@ jobs:
           test ! -e /usr/share/doc/mygo-workspace/copyright
           echo 'PASS: apt removal cleaned up the launcher and copyright'
       - uses: actions/upload-artifact@v4
-        if: github.ref == 'refs/heads/feat/workspace-distribution'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         with:
           name: mygo-workspace-0.1.0-linux-amd64
           path: |
