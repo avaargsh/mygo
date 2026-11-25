@@ -27,6 +27,7 @@ type Hit struct {
 
 type Client struct {
 	endpoint string
+	index    string
 	http     *http.Client
 }
 
@@ -46,7 +47,7 @@ func New(endpoint, index string) (*Client, error) {
 	}
 	tr := http.DefaultTransport.(*http.Transport).Clone()
 	tr.Proxy = nil
-	return &Client{endpoint: strings.TrimSuffix(u.String(), "/") + "/" + index + "/_search", http: &http.Client{Transport: tr, Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}, nil
+	return &Client{index: index, endpoint: strings.TrimSuffix(u.String(), "/") + "/" + index + "/_search", http: &http.Client{Transport: tr, Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}, nil
 }
 
 // Search submits a bounded lexical query. An empty hit list is not an error.
@@ -54,7 +55,7 @@ func (c *Client) Search(ctx context.Context, query string, limit int) ([]Hit, er
 	if strings.TrimSpace(query) == "" || len(query) > 4096 || limit < 1 || limit > 20 {
 		return nil, errors.New("invalid query or limit")
 	}
-	body, err := json.Marshal(map[string]any{"size": limit, "query": map[string]any{"match": map[string]string{"body": query}}, "_source": []string{"ax_path", "path", "start_line", "line", "body", "code"}})
+	body, err := json.Marshal(map[string]any{"size": limit, "query": map[string]any{"match": map[string]string{"body": query}}, "_source": []string{"ax_path", "path", "start_line", "line"}, "fields": []string{"_passage"}})
 	if err != nil {
 		return nil, err
 	}
@@ -80,15 +81,21 @@ func (c *Client) Search(ctx context.Context, query string, limit int) ([]Hit, er
 		return nil, errors.New("XERJ response exceeds budget")
 	}
 	var result struct {
+		TimedOut bool `json:"timed_out"`
+		Shards   struct {
+			Failed int `json:"failed"`
+		} `json:"_shards"`
 		Hits *struct {
 			Hits *[]struct {
+				Index  string `json:"_index"`
+				Fields struct {
+					Passage json.RawMessage `json:"_passage"`
+				} `json:"fields"`
 				Source struct {
 					Path      string `json:"path"`
 					AXPath    string `json:"ax_path"`
 					StartLine int    `json:"start_line"`
 					Line      int    `json:"line"`
-					Body      string `json:"body"`
-					Code      string `json:"code"`
 				} `json:"_source"`
 			} `json:"hits"`
 		} `json:"hits"`
@@ -96,11 +103,17 @@ func (c *Client) Search(ctx context.Context, query string, limit int) ([]Hit, er
 	if err = json.Unmarshal(raw, &result); err != nil {
 		return nil, err
 	}
+	if result.TimedOut || result.Shards.Failed != 0 {
+		return nil, errors.New("incomplete XERJ search")
+	}
 	if result.Hits == nil || result.Hits.Hits == nil || len(*result.Hits.Hits) > limit {
 		return nil, errors.New("invalid XERJ hits")
 	}
 	out := make([]Hit, 0, len(*result.Hits.Hits))
 	for _, h := range *result.Hits.Hits {
+		if h.Index != c.index {
+			return nil, errors.New("XERJ hit index mismatch")
+		}
 		s := h.Source
 		path := s.AXPath
 		if path == "" {
@@ -110,9 +123,24 @@ func (c *Client) Search(ctx context.Context, query string, limit int) ([]Hit, er
 		if line == 0 {
 			line = s.Line
 		}
-		snippet := s.Body
-		if snippet == "" {
-			snippet = s.Code
+		snippet := ""
+		if len(h.Fields.Passage) != 0 {
+			var passages []struct {
+				Text        string `json:"text"`
+				StartOffset *int   `json:"start_offset"`
+			}
+			raw := h.Fields.Passage
+			if len(raw) > 0 && raw[0] == '{' {
+				raw = append(append([]byte{'['}, raw...), ']')
+			}
+			if err := json.Unmarshal(raw, &passages); err != nil || len(passages) == 0 || passages[0].StartOffset == nil || *passages[0].StartOffset < 0 {
+				return nil, errors.New("invalid XERJ passage")
+			}
+			snippet = passages[0].Text
+			// A character offset alone does not establish a source line.
+			if *passages[0].StartOffset != 0 {
+				line = 0
+			}
 		}
 		if strings.TrimSpace(path) == "" || line < 0 || strings.TrimSpace(snippet) == "" {
 			return nil, errors.New("hit lacks source or content")
