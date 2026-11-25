@@ -71,36 +71,36 @@ func (s *shell) renderChat(c *ui.Context, snapshot core.WorkspaceSnapshot, paneI
 		ui.Button(c, "Show chat here").OnClick(func() { s.apply(s.workspace.Focus(paneID)) })
 		return
 	}
-	state := ch.chat.Snapshot()
-	// Keep the actions in the pane header. In a constrained split, a control
-	// placed below the editor can sit underneath another workspace control.
-	ui.Row(c.Key("chat-actions")).Gap(spaceControl).Wrap().Children(func() {
-		ui.Text(c, "Model chat").Bold()
-		if state.Active {
-			ui.Button(c, "Stop generation").OnClick(func() { ch.chat.Cancel() })
-		} else {
-			ui.PrimaryButton(c, "Send message").Disabled(strings.TrimSpace(ch.draft) == "").OnClick(func() { s.sendChat(ch) })
-			ui.Button(c, "Clear conversation").Disabled(len(state.Turns) == 0).OnClick(func() { s.clearChat(ch) })
-		}
-	})
-	if ch.boundEndpoint == "" {
-		ui.TextInput(c.Key("chat-endpoint"), &ch.endpoint).Label("Chat completions endpoint").Placeholder("https://host/v1/chat/completions")
-		ui.TextInput(c.Key("chat-model"), &ch.modelName).Label("Model name")
-	} else {
-		ui.Text(c, "Endpoint: "+ch.boundEndpoint)
-		ui.Text(c, "Model: "+ch.boundModel)
-	}
-	ui.Text(c, "Send transmits your prompt and completed chat history to the selected model. No other workspace content is included. This conversation is not saved.")
-	// Keep the composer above the flexible history so it stays reachable in a split pane.
-	if state.Active {
-		c.After(100 * time.Millisecond)
-		ui.Text(c, "Generation active")
-	} else {
-		ui.TextInput(c.Key("chat-credential"), &ch.apiKey).Password().MaxLength(8192).Label("API key (optional; cleared on send)")
-		ui.TextArea(c.Key("chat-message"), &ch.draft).Label("Message").Placeholder("Write a message…").Height(72).MinHeight(64).MinWidth(0).MaxLength(8192)
-	}
-	ui.Scroll(c).Grow(1).MinHeight(0).Children(func() {
-		ui.Column(c).Gap(spaceSection).Children(func() {
+	ui.Scroll(c.Key("chat-pane")).Grow(1).MinHeight(0).MinWidth(0).Children(func() {
+		ui.Column(c).Gap(spaceControl).Children(func() {
+			state := ch.chat.Snapshot()
+			// Keep the actions at the start of the scrollable pane.
+			ui.Row(c.Key("chat-actions")).Gap(spaceControl).Wrap().Children(func() {
+				ui.Text(c, "Model chat").Bold()
+				if state.Active {
+					ui.Button(c, "Stop generation").OnClick(func() { ch.chat.Cancel() })
+				} else {
+					ui.PrimaryButton(c, "Send message").Disabled(strings.TrimSpace(ch.draft) == "").OnClick(func() { s.sendChat(ch) })
+					ui.Button(c, "Clear conversation").Disabled(len(state.Turns) == 0).OnClick(func() { s.clearChat(ch) })
+				}
+			})
+			ui.Text(c, "Send transmits your prompt and completed chat history to the selected model. No other workspace content is included. This conversation is not saved.")
+			// Keep the composer ahead of the transcript.
+			if state.Active {
+				c.After(100 * time.Millisecond)
+				ui.Text(c, "Generation active")
+			} else {
+				ui.TextInput(c.Key("chat-credential"), &ch.apiKey).Password().MaxLength(8192).Label("API key (optional; cleared on send)")
+				ui.TextArea(c.Key("chat-message"), &ch.draft).Label("Message").Placeholder("Write a message…").Height(72).MinHeight(64).MinWidth(0).MaxLength(8192)
+			}
+			if ch.boundEndpoint == "" {
+				ui.TextInput(c.Key("chat-endpoint"), &ch.endpoint).Label("Chat completions endpoint").Placeholder("https://host/v1/chat/completions")
+				ui.TextInput(c.Key("chat-model"), &ch.modelName).Label("Model name")
+			} else {
+				ui.Text(c, "Endpoint: "+ch.boundEndpoint)
+				ui.Text(c, "Model: "+ch.boundModel)
+			}
+			ui.Divider(c)
 			for i, turn := range state.Turns {
 				ui.Column(c.Key("turn-"+strconv.Itoa(i))).Gap(4).Children(func() {
 					ui.Text(c, "You").Bold()
