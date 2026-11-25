@@ -16,6 +16,7 @@ import (
 
 type shell struct {
 	workspace *core.Workspace
+	window    *mygo.Window
 	content   *core.ContentManager
 	sequence  int
 	status    string
@@ -153,6 +154,7 @@ func (s *shell) view(c *ui.Context) {
 			ui.Button(c.Key("open-home"), "Home").OnClick(func() { s.open("home") })
 			ui.Button(c.Key("open-runtime"), "Runtime info").OnClick(func() { s.open("runtime") })
 			ui.Button(c.Key("open-notes"), "Notes").OnClick(func() { s.open("notes") })
+			ui.Button(c.Key("open-browser"), "Browser").OnClick(func() { s.open("browser") })
 			ui.Button(c.Key("split-right"), "Split right").OnClick(func() { s.split(core.Horizontal) })
 			ui.Button(c.Key("split-down"), "Split down").OnClick(func() { s.split(core.Vertical) })
 			ui.Button(c.Key("move-next"), "Move tab to next pane").Disabled(len(snapshot.Panes) < 2 || active.ActiveTab == "").OnClick(s.moveNext)
@@ -169,6 +171,11 @@ func (s *shell) view(c *ui.Context) {
 		if n := s.note(); n != nil && n.Dirty() {
 			ui.Text(c, "Notes have unsaved changes").FontSize(fontSmall)
 			ui.Button(c.Key("save-dirty-note"), "Save note changes").OnClick(s.saveNote)
+		}
+		if session := s.content.Session("browser"); session != nil {
+			if browser, ok := session.Value.(*browserSession); ok && browser.view != nil && core.SessionOwner(snapshot, "browser") == "" {
+				ui.Button(c.Key("release-hidden-browser"), "Close hidden browser page").OnClick(func() { s.releaseBrowser(browser) })
+			}
 		}
 		if s.status != "" {
 			ui.Text(c, s.status)
@@ -228,7 +235,7 @@ func (s *shell) renderPane(c *ui.Context, snapshot core.WorkspaceSnapshot, id st
 		ui.Divider(c)
 		for _, tab := range pane.Tabs {
 			if tab.ID == pane.ActiveTab {
-				s.renderContent(c, tab.SessionID)
+				s.renderContent(c, snapshot, id, tab.SessionID)
 				return
 			}
 		}
@@ -236,7 +243,7 @@ func (s *shell) renderPane(c *ui.Context, snapshot core.WorkspaceSnapshot, id st
 	})
 }
 
-func (s *shell) renderContent(c *ui.Context, sessionID string) {
+func (s *shell) renderContent(c *ui.Context, snapshot core.WorkspaceSnapshot, paneID, sessionID string) {
 	session := s.content.Session(sessionID)
 	if session == nil {
 		ui.Text(c, "Content session unavailable: "+sessionID)
@@ -252,6 +259,12 @@ func (s *shell) renderContent(c *ui.Context, sessionID string) {
 		ui.Text(c, fmt.Sprintf("Platform: %s/%s", runtime.GOOS, runtime.GOARCH))
 		ui.Text(c, fmt.Sprintf("Logical CPUs available at startup: %d", runtime.NumCPU()))
 		ui.Text(c, "Go runtime: "+runtime.Version())
+	case "browser":
+		if browser, ok := session.Value.(*browserSession); ok && browser != nil {
+			s.renderBrowser(c, snapshot, paneID, browser)
+		} else {
+			ui.Text(c, "Browser session unavailable")
+		}
 	case "notes":
 		n, ok := session.Value.(*core.Note)
 		if !ok || n == nil {
@@ -307,7 +320,7 @@ func main() {
 		s.open("home")
 	}
 	mygo.App.WhenReady(func() {
-		mygo.NewWindow(mygo.WindowOptions{
+		s.window = mygo.NewWindow(mygo.WindowOptions{
 			Title:   "MyGo Workspace",
 			Width:   1000,
 			Height:  680,
