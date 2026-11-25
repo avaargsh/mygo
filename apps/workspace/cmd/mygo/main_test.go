@@ -79,3 +79,43 @@ func TestNotesSessionSurvivesClosingView(t *testing.T) {
 		t.Fatal("saved draft not restored")
 	}
 }
+
+func TestBrowserSessionStartsWithoutNativeResource(t *testing.T) {
+	w, err := core.NewWorkspace("root")
+	if err != nil {
+		t.Fatal(err)
+	}
+	content, err := builtInContent(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &shell{workspace: w, content: content}
+	s.open("browser")
+	session := content.Session("browser")
+	b, ok := session.Value.(*browserSession)
+	if !ok || b.view != nil || b.address != "" {
+		t.Fatal("browser opened a page without an explicit address")
+	}
+	b.address = "file:///tmp/unsafe"
+	s.navigateBrowser(b)
+	if b.view != nil || s.status == "" {
+		t.Fatal("invalid navigation created a native resource")
+	}
+	b.address = "https://example.org/"
+	s.navigateBrowser(b)
+	if b.view != nil || s.status != "desktop window not ready" {
+		t.Fatal("headless session tried to start a native WebView")
+	}
+	snap := w.Snapshot()
+	if err := w.Close("root", snap.Panes["root"].ActiveTab); err != nil {
+		t.Fatal(err)
+	}
+	s.open("browser")
+	if content.Session("browser") != session {
+		t.Fatal("closing the browser tab evicted its session")
+	}
+	s.releaseBrowser(b)
+	if b.view != nil {
+		t.Fatal("release did not leave an empty browser")
+	}
+}
