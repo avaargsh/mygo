@@ -105,6 +105,20 @@ func (s *shell) renderFiles(c *ui.Context, f *filesSession) {
 	b := f.browser
 	ui.Text(c, f.label)
 	ui.Text(c, b.Path())
+	if f.previewName != "" {
+		ui.Row(c).Gap(spaceControl).Children(func() {
+			ui.Text(c, "Preview: "+f.previewName)
+			ui.Button(c, "Back to files").OnClick(func() {
+				f.previewName, f.preview, f.previewErr = "", "", ""
+			})
+		})
+		if f.previewErr != "" {
+			ui.Text(c, f.previewErr)
+		} else {
+			ui.Scroll(c).Grow(1).Children(func() { ui.Text(c, f.preview) })
+		}
+		return
+	}
 	ui.Row(c).Gap(spaceControl).Children(func() {
 		ui.Button(c, "Parent folder").Disabled(b.Path() == ".").OnClick(func() { s.fileResult(b.Up()) })
 		ui.Button(c, "Refresh files").OnClick(func() { s.fileResult(b.Refresh()) })
