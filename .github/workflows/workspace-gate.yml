@@ -44,6 +44,15 @@ jobs:
         run: |
           bun install --frozen-lockfile
           bun run build
+      - name: XERJ adapter and native search example gate
+        env:
+          MYGO_XERJ_LIVE: '0'
+          MYGO_XERJ_ACCEPTANCE: '0'
+          MYGO_XERJ_PANEL: '0'
+        run: |
+          go test -race -count=1 -timeout=5m -v ./plugins/xerj ./examples/xerj-search
+          go vet ./plugins/xerj ./examples/xerj-search
+          go build -o "$RUNNER_TEMP/mygo-xerj-search" ./examples/xerj-search
       - name: Test workspace packages
         run: xvfb-run -a dbus-run-session -- go test -count=1 ./apps/workspace/...
       - name: Race detection
