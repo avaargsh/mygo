@@ -240,7 +240,7 @@ func (s *shell) renderContent(c *ui.Context, sessionID string) {
 	session := s.content.Session(sessionID)
 	if session == nil {
 		ui.Text(c, "Content session unavailable: "+sessionID)
-		ui.Button(c.Key("retry-content"), "Retry content").OnClick(func() { s.open(sessionID) })
+		ui.Button(c.Key("retry-content"), "Retry content").OnClick(func() { s.retryContent(sessionID) })
 		return
 	}
 	switch session.ID {
