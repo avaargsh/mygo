@@ -203,7 +203,7 @@ func readNetwork(name string) (uint64, uint64, int, error) {
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		line := scanner.Text()
-		colon := strings.IndexByte(line, ':')
+		colon := strings.LastIndexByte(line, ':')
 		if colon < 0 {
 			continue
 		}
