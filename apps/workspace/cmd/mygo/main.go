@@ -15,14 +15,17 @@ import (
 )
 
 type shell struct {
-	workspace *core.Workspace
-	window    *mygo.Window
-	content   *core.ContentManager
-	sequence  int
-	status    string
-	statePath string
-	theme     string
-	dirty     bool
+	workspace    *core.Workspace
+	window       *mygo.Window
+	content      *core.ContentManager
+	sequence     int
+	status       string
+	statePath    string
+	theme        string
+	dirty        bool
+	commands     *core.CommandRegistry
+	paletteOpen  bool
+	paletteQuery string
 }
 
 func (s *shell) nextID(prefix string) string {
@@ -135,36 +138,37 @@ func (s *shell) moveNext() {
 
 func (s *shell) view(c *ui.Context) {
 	snapshot := s.workspace.Snapshot()
-	active := snapshot.Panes[snapshot.ActivePane]
 	ui.Themed(c, workspaceTheme(c)).Fill().Padding(spacePage).Gap(spaceSection).Children(func() {
 		ui.Row(c).Gap(12).Children(func() {
 			ui.Text(c, "MyGo Workspace").FontSize(fontTitle).Bold()
 			ui.Spacer(c)
 			ui.Text(c, "Local workspace").TextColor(c.Theme().TextMuted)
+			ui.Button(c.Key("open-commands"), "Commands").OnClick(func() { s.paletteOpen = !s.paletteOpen; s.paletteQuery = "" })
 		})
 		ui.Row(c).Gap(spaceControl).Wrap().Children(func() {
-			ui.PrimaryButton(c.Key("save"), "Save workspace").OnClick(s.save)
+			ui.PrimaryButton(c.Key("save"), "Save workspace").OnClick(func() { s.runCommand("workspace.save") })
 			for _, mode := range []string{"system", "light", "dark"} {
 				label := mode
 				if mode == s.theme {
 					label += " (selected)"
 				}
-				ui.Button(c.Key("theme-"+mode), label).OnClick(func() { s.setTheme(mode) })
+				s.commandButton(c, "theme-"+mode, "theme."+mode, label)
 			}
-			ui.Button(c.Key("open-home"), "Home").OnClick(func() { s.open("home") })
-			ui.Button(c.Key("open-runtime"), "Runtime info").OnClick(func() { s.open("runtime") })
-			ui.Button(c.Key("open-system"), "System Info").OnClick(func() { s.open("system") })
-			ui.Button(c.Key("open-notes"), "Notes").OnClick(func() { s.open("notes") })
-			ui.Button(c.Key("open-browser"), "Browser").OnClick(func() { s.open("browser") })
-			ui.Button(c.Key("open-terminal"), "Terminal").OnClick(func() { s.open("terminal") })
-			ui.Button(c.Key("open-files"), "Files").OnClick(func() { s.open("files") })
-			ui.Button(c.Key("split-right"), "Split right").OnClick(func() { s.split(core.Horizontal) })
-			ui.Button(c.Key("split-down"), "Split down").OnClick(func() { s.split(core.Vertical) })
-			ui.Button(c.Key("move-next"), "Move tab to next pane").Disabled(len(snapshot.Panes) < 2 || active.ActiveTab == "").OnClick(s.moveNext)
-			ui.Button(c.Key("remove-pane"), "Close empty pane").Disabled(len(snapshot.Panes) < 2 || len(active.Tabs) != 0).OnClick(func() {
-				s.apply(s.workspace.RemovePane(snapshot.ActivePane))
-			})
+			s.commandButton(c, "open-home", "content.home", "Home")
+			s.commandButton(c, "open-runtime", "content.runtime", "Runtime info")
+			s.commandButton(c, "open-system", "content.system", "System Info")
+			s.commandButton(c, "open-notes", "content.notes", "Notes")
+			s.commandButton(c, "open-browser", "content.browser", "Browser")
+			s.commandButton(c, "open-terminal", "content.terminal", "Terminal")
+			s.commandButton(c, "open-files", "content.files", "Files")
+			s.commandButton(c, "split-right", "layout.split-right", "Split right")
+			s.commandButton(c, "split-down", "layout.split-down", "Split down")
+			s.commandButton(c, "move-next", "layout.move-next", "Move tab to next pane")
+			s.commandButton(c, "remove-pane", "layout.remove-pane", "Close empty pane")
 		})
+		if s.paletteOpen {
+			s.renderCommandPalette(c)
+		}
 		s.renderNode(c, snapshot, snapshot.Layout)
 		saved := "Saved"
 		if s.dirty {
