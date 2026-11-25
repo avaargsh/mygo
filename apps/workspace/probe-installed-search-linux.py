@@ -59,6 +59,13 @@ def enter(label, value):
     click(label)
     xdotool("key", "--clearmodifiers", "ctrl+a")
     xdotool("type", "--clearmodifiers", "--delay", "5", value)
+    deadline = time.monotonic() + 3
+    while time.monotonic() < deadline:
+        actual = find(label).queryText().getText(0, -1)
+        if actual == value:
+            return
+        time.sleep(0.05)
+    raise RuntimeError(f"Input {label!r} value was {actual!r}, expected {value!r}")
 
 
 NOTE = "Workspace note acceptance marker"
@@ -131,6 +138,7 @@ def exercise_workspace():
             click("Notes")
             enter("Markdown source", NOTE)
             click("Save note")
+            find("Note saved")
             note = os.path.join(os.environ["XDG_CONFIG_HOME"], "MyGoWorkspace", "notes.md")
             with open(note, encoding="utf-8") as file:
                 if file.read().strip() != NOTE:
@@ -141,9 +149,21 @@ def exercise_workspace():
             enter("Chat completions endpoint", origin + "/v1/chat/completions")
             enter("Model name", "workspace-fixture")
             enter("Message", QUESTION)
+            send = find("Send message")
+            if not send.getState().contains(pyatspi.STATE_ENABLED):
+                raise RuntimeError("Send message stayed disabled after text entry")
+            bounds = send.queryComponent().getExtents(pyatspi.DESKTOP_COORDS)
+            window = find("MyGo Workspace", component=True)
+            if not (
+                window.x <= bounds.x < window.x + window.width
+                and window.y <= bounds.y
+                and bounds.y + bounds.height <= window.y + window.height
+            ):
+                raise RuntimeError(f"Send message is clipped: control {bounds}, window {window}")
             click("Send message")
             if not model_requested.wait(10):
-                raise RuntimeError("Chat did not reach the local model fixture")
+                labels = sorted({node.name for node in walk(pyatspi.Registry.getDesktop(0)) if node.name})
+                raise RuntimeError(f"Chat did not reach the local model fixture. Labels: {labels[:100]}")
             find(ANSWER, contains=True)
             find("Finish: stop")
             print("PASS: installed Chat rendered and completed a streamed response without credentials")

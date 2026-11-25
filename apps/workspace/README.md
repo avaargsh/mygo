@@ -5,6 +5,47 @@ Personal AI Workspace — Universal Content, Local-first, Agent-native, MCP-nati
 This is an independent product layer within the existing MyGo Go module.
 It does not change framework APIs or require a second module.
 
+## Linux x64 preview: first session
+
+Use all files from the same Ubuntu x64 preview bundle. Extract the bundle
+to a folder and verify it before installing:
+
+    sha256sum -c SHA256SUMS
+
+Choose one install path (not both):
+
+- System installation: `sudo apt install ./mygo-workspace_0.1.0_amd64.deb`
+- Per-user installation: `sh ./install.sh ./mygo-workspace-0.1.0-linux-amd64.tar.gz`.
+  The host needs GTK 3 and WebKitGTK 4.1. Install the distributions' required
+  desktop packages if the installer reports them missing.
+
+Launch **MyGo Workspace** from the application menu or run
+`mygo-workspace` (for the per-user method, the installed command is at
+`~/.local/bin/mygo-workspace`).
+
+1. Open **Browser**, type an HTTP(S) URL, and choose **Go**.
+2. Open **Terminal** and choose **Start shell**. It runs your local shell
+   as your current user; it is not an isolated sandbox.
+3. Use **Split right** or **Split down**, then drag the divider or focus it
+   and use arrow keys. Choose **Move tab to next pane** to move the active
+   tab; use each tab's close control to close its view.
+4. Open **Notes**, edit the Markdown, and click **Save note**.
+5. Open **Chat**. Enter the model name and its OpenAI-compatible chat
+   completions URL. A remote endpoint must use HTTPS. If your provider
+   requires an API key, enter it in the password field, then send a message.
+6. Open **Search** and select an exact index on a separately running,
+   local XERJ node. Enter keywords and choose **Find passages**. MyGo does
+   not build an index or start the XERJ node on your behalf.
+7. Click **Save workspace**, quit, and reopen. The split sizes, tabs,
+   selection, theme and saved note return. Web navigation and terminal
+   processes do not resume automatically. Search configuration/results,
+   credentials and the default Chat conversation are not part of the
+   workspace snapshot.
+
+A test-only CI run may exercise these steps without publishing a download.
+Use a distribution artifact explicitly provided for your platform; a CI
+link by itself is not an installer.
+
 ## Run from the repository root
 
 Requires the toolchain specified in root go.mod (Go 1.27.3 at the
