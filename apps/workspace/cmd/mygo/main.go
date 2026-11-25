@@ -161,6 +161,7 @@ func (s *shell) view(c *ui.Context) {
 			s.commandButton(c, "open-browser", "content.browser", "Browser")
 			s.commandButton(c, "open-terminal", "content.terminal", "Terminal")
 			s.commandButton(c, "open-files", "content.files", "Files")
+			s.commandButton(c, "open-chat", "content.chat", "Chat")
 			s.commandButton(c, "split-right", "layout.split-right", "Split right")
 			s.commandButton(c, "split-down", "layout.split-down", "Split down")
 			s.commandButton(c, "move-next", "layout.move-next", "Move tab to next pane")
@@ -195,6 +196,7 @@ func (s *shell) view(c *ui.Context) {
 		if f := s.filesSession(); f != nil && f.browser != nil && core.SessionOwner(snapshot, "files") == "" {
 			ui.Button(c.Key("revoke-hidden-files"), "Revoke hidden folder access").OnClick(func() { s.fileResult(f.close()) })
 		}
+		s.renderChatActivity(c, snapshot)
 		if s.status != "" {
 			ui.Text(c, s.status)
 		}
@@ -301,6 +303,12 @@ func (s *shell) renderContent(c *ui.Context, snapshot core.WorkspaceSnapshot, pa
 		} else {
 			ui.Text(c, "Files session unavailable")
 		}
+	case "chat":
+		if ch, ok := session.Value.(*chatViewSession); ok && ch != nil {
+			s.renderChat(c, snapshot, paneID, ch)
+		} else {
+			ui.Text(c, "Chat session unavailable")
+		}
 	case "notes":
 		n, ok := session.Value.(*core.Note)
 		if !ok || n == nil {
@@ -363,6 +371,10 @@ func main() {
 			Content: ui.View(s.view),
 		})
 		s.window.OnClosed(func() {
+			if ch := s.chatSession(); ch != nil {
+				ch.chat.Cancel()
+				ch.apiKey = ""
+			}
 			if session := s.content.Session("browser"); session != nil {
 				if browser, ok := session.Value.(*browserSession); ok && browser != nil {
 					s.releaseBrowser(browser)
