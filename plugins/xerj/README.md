@@ -32,7 +32,7 @@ Check results against the original files. Path and line are unverified search me
 - Read-only lexical search with `_passage` projection (no whole document request), exact hit index check, incomplete-result rejection, bounded results, five-second deadline, no redirects or proxy; no memory writes, indexing, external reranking or arbitrary tool execution.
 - Index only explicitly approved directories; exclude secrets, credentials, personal files and generated state.
 - Retrieved text is untrusted. Opening a source requires workspace authorization and current-file validation.
-- Before general availability: verify against a pinned real XERJ release, add workspace index lifecycle and per-workspace access enforcement, stale-source detection, typed IPC, UI and a disabled/unavailable state. Test desktop packaging separately.
+- Before general availability: verify against a pinned real XERJ release, add durable index lifecycle, actual builder integration and per-workspace access enforcement, stale-source detection, typed IPC, UI and a disabled/unavailable state. Test desktop packaging separately.
 
 ## Tests
 
@@ -57,3 +57,19 @@ The port above is an example; use the actual disposable node port. Inspect the c
 Replace the placeholder with the actual name before running. A passing test requires the known source file and marker in a returned passage. The test does not install or launch software, index files, or send feedback. A passage offset alone does not establish a source line; unknown line numbers are omitted. Do not expose search metadata as a trusted file-open path.
 
 Record the binary version, fixture index, and test output before marking the live gate complete. Object/array passage fixtures are defensive compatibility tests, not evidence of actual upstream wire behavior.
+
+## Workspace binding lifecycle (in-memory)
+
+A single application-owned Manager per local node coordinates trusted workspace bindings. Each generation needs a fresh dedicated exact index name; old names remain reserved for the lifetime of the Manager. The trusted caller must independently build and validate the authorized corpus before publishing the generation. This package does not launch autoindex or validate index ownership at the engine.
+
+    manager := xerj.NewManager("http://127.0.0.1:9200")
+    ticket, err := manager.Begin(workspaceID, freshExactIndex)
+    // Handle err; build and verify the dedicated corpus externally.
+    // Only after successful verification:
+    err = manager.Publish(ticket)
+    // Handle err before searching.
+    hits, err := manager.Search(ctx, workspaceID, "workspace query", 5)
+
+Begin invalidates the previous ready binding immediately. Status distinguishes UNBOUND, BUILDING, READY and FAILED; Fail records a failed build, and retries require a new generation. Stale completion tickets and results from a superseded in-flight query are rejected. There is no fallback to older indices. This chooses availability loss during rebuild over serving outdated results.
+
+Do not expose Manager lifecycle methods, raw workspace IDs or index selection to untrusted frontends or agents. The caller must authorize workspace identity, enforce the approved corpus, and revalidate source identity before opening results. Reservation is process-local; persistence, restart reconciliation, actual build/cleanup operations, engine-side authorization, and source freshness are not implemented. READY means the trusted caller published a binding, not that the node is currently healthy. Incremental in-place updates are intentionally deferred until a consistent generation protocol is verified.
