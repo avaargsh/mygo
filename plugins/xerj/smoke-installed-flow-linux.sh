@@ -57,5 +57,13 @@ curl -fsS --max-time 5 -H 'Content-Type: application/json' \
   --data '{"size":1,"track_total_hits":true,"query":{"match_all":{}},"_source":["ax_path","body"]}' \
   | python3 -c 'import json,sys; print("Synthetic verifier response:",json.dumps(json.load(sys.stdin),ensure_ascii=True))'
 
+# Compare bounded read-only shapes against the same known synthetic fixture.
+# No query is used to authorize publication; the original verifier still runs.
+for payload in '{"size":8,"track_total_hits":true,"query":{"match_all":{}}}' '{"size":8,"track_total_hits":true,"query":{"match_all":{}},"fields":["_passage","body"]}' '{"size":8,"track_total_hits":true,"query":{"match":{"body":"mygoinstalledalpha"}},"fields":["_passage"],"_source":true}'; do
+  printf 'Synthetic query: %s\n' "$payload"
+  curl -fsS --max-time 5 -H 'Content-Type: application/json' -X POST "$endpoint/mygoslugprobe-docs/_search" --data "$payload" | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin),ensure_ascii=True))'
+done
+printf 'Synthetic count response: '
+curl -sS --max-time 5 -H 'Content-Type: application/json' -X POST "$endpoint/mygoslugprobe-docs/_count" --data '{"query":{"match_all":{}}}' | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin),ensure_ascii=True))'
 MYGO_XERJ_ACCEPTANCE=1 MYGO_XERJ_ENDPOINT="$endpoint" MYGO_XERJ_BINARY="$out/xerj" MYGO_XERJ_SHA256="$digest" MYGO_XERJ_DATASET_SUFFIX=docs \
   go test -race -count=1 -timeout=10m -run '^TestLiveInstalledFlow$' -v ./plugins/xerj
