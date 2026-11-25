@@ -52,6 +52,8 @@ type BuildJob struct {
 	cancel            context.CancelFunc
 	done              chan struct{}
 	err               error
+	cleanup           func() error
+	cleanupErr        error
 }
 
 func NewBuildQueue(manager *Manager, capacity int) (*BuildQueue, error) {
@@ -86,6 +88,10 @@ func (q *BuildQueue) Submit(workspace string, config AutoindexConfig, expected m
 }
 
 func (q *BuildQueue) submit(workspace, prefix string, run func(context.Context) error) (*BuildJob, error) {
+	return q.submitOwned(workspace, prefix, run, nil)
+}
+
+func (q *BuildQueue) submitOwned(workspace, prefix string, run func(context.Context) error, cleanup func() error) (*BuildJob, error) {
 	if strings.TrimSpace(workspace) == "" || len(workspace) > 256 || !autoindexPrefix.MatchString(prefix) || run == nil {
 		return nil, errors.New("invalid build request")
 	}
@@ -120,7 +126,7 @@ func (q *BuildQueue) submit(workspace, prefix string, run func(context.Context) 
 	if n >= q.capacity {
 		return nil, ErrBuildQueueFull
 	}
-	j := &BuildJob{queue: q, workspace: workspace, prefix: prefix, run: run, state: BuildQueued, done: make(chan struct{})}
+	j := &BuildJob{queue: q, workspace: workspace, prefix: prefix, run: run, state: BuildQueued, done: make(chan struct{}), cleanup: cleanup}
 	if err := q.recordLocked(j, BuildQueued); err != nil {
 		return nil, err
 	}
@@ -199,6 +205,10 @@ func (q *BuildQueue) runNext(ctx context.Context, serving bool, timeout time.Dur
 }
 
 func (j *BuildJob) finishLocked(state BuildState, err error) {
+	if j.cleanup != nil {
+		j.cleanupErr = j.cleanup()
+		j.cleanup = nil
+	}
 	j.state = state
 	j.err = err
 	j.run = nil
