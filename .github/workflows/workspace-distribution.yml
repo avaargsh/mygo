@@ -25,7 +25,7 @@ jobs:
       - name: Prepare dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-0 libayatana-appindicator3-1 xvfb xauth dbus-x11 libgl1-mesa-dri libglx-mesa0 libegl-mesa0
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-0 libayatana-appindicator3-1 xvfb xauth xdotool dbus-x11 libgl1-mesa-dri libglx-mesa0 libegl-mesa0
           bun install --frozen-lockfile
           bun run build
           go mod verify
@@ -42,6 +42,10 @@ jobs:
           tar -tzf mygo-workspace-0.1.0-linux-amd64.tar.gz
           sha256sum mygo-workspace_0.1.0_amd64.deb mygo-workspace-0.1.0-linux-amd64.tar.gz install.sh > SHA256SUMS
           sha256sum -c SHA256SUMS
+      - name: Verify installed user application
+        run: |
+          bash -n apps/workspace/smoke-install-linux.sh
+          xvfb-run -a dbus-run-session -- bash apps/workspace/smoke-install-linux.sh apps/workspace/cmd/mygo/dist/linux-amd64
       - uses: actions/upload-artifact@v4
         with:
           name: mygo-workspace-0.1.0-linux-amd64
