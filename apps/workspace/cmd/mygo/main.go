@@ -386,7 +386,9 @@ func main() {
 					s.window.Invalidate()
 				}},
 				mygo.Separator(),
-				{Role: mygo.RoleClose, Accelerator: "CmdOrCtrl+W"},
+				{Label: "Close window", Accelerator: "CmdOrCtrl+W", Click: func(*mygo.MenuItem, *mygo.Window) {
+					s.window.Close()
+				}},
 			}},
 			{Role: mygo.RoleEditMenu},
 			{Label: "View", Submenu: []*mygo.MenuItem{
@@ -395,7 +397,7 @@ func main() {
 					s.window.Invalidate()
 				}},
 			}},
-			{Role: mygo.RoleWindowMenu},
+			{Label: "Window", Submenu: []*mygo.MenuItem{{Role: mygo.RoleMinimize}}},
 		}))
 		s.window.OnClose(func(e *mygo.CloseEvent) {
 			if !s.confirmClose(mygo.Dialog.Message) {
