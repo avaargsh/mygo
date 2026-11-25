@@ -179,14 +179,9 @@ func (s *shell) loadChatArchive(ch *chatViewSession) {
 		s.status = "Clear the conversation, draft and credential before loading"
 		return
 	}
-	restored, endpoint, modelName, err := model.LoadChatArchive(filepath.Join(filepath.Dir(s.statePath), "chat.json"))
+	endpoint, modelName, err := ch.chat.RestoreArchive(filepath.Join(filepath.Dir(s.statePath), "chat.json"))
 	if err != nil {
 		s.status = "Chat archive load failed: " + err.Error()
-		return
-	}
-	// Transfer only settled state into the existing session, never copy a mutex.
-	if err := ch.chat.RestoreSnapshot(restored.Snapshot()); err != nil {
-		s.status = "Chat archive restore failed: " + err.Error()
 		return
 	}
 	ch.endpoint, ch.modelName = endpoint, modelName
