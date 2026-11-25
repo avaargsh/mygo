@@ -20,6 +20,7 @@ var indexName = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,127}$`)
 
 // Hit is untrusted retrieved content, not an instruction or a verified citation.
 type Hit struct {
+	Index string `json:"index"`
 	Path string `json:"path"`
 	Line int    `json:"line,omitempty"`
 	Text string `json:"text"`
@@ -149,7 +150,7 @@ func (c *Client) Search(ctx context.Context, query string, limit int) ([]Hit, er
 		if len(r) > 4096 {
 			snippet = string(r[:4096])
 		}
-		out = append(out, Hit{Path: path, Line: line, Text: snippet})
+		out = append(out, Hit{Index: c.index, Path: path, Line: line, Text: snippet})
 	}
 	return out, nil
 }
