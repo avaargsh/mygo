@@ -50,6 +50,7 @@ type Manager struct {
 	reserved      map[string]struct{}
 	manifestPath  string
 	manifestFault bool
+	revisions     map[string]*sourceRevision
 }
 
 func NewManager(endpoint string) *Manager {
@@ -68,6 +69,10 @@ func (m *Manager) BeginSet(workspace string, indices []string) (Generation, erro
 }
 
 func (m *Manager) beginSet(workspace string, indices []string, freshPrefix string) (Generation, error) {
+	return m.beginSetAt(workspace, indices, freshPrefix, nil)
+}
+
+func (m *Manager) beginSetAt(workspace string, indices []string, freshPrefix string, revision *sourceTicket) (Generation, error) {
 	if strings.TrimSpace(workspace) == "" || len(workspace) > 256 {
 		return Generation{}, errors.New("invalid workspace identity")
 	}
@@ -91,6 +96,9 @@ func (m *Manager) beginSet(workspace string, indices []string, freshPrefix strin
 	defer m.mu.Unlock()
 	if m.manifestFault {
 		return Generation{}, ErrManifestUnavailable
+	}
+	if revision != nil && m.revisions[workspace] != revision.revision {
+		return Generation{}, ErrStaleGeneration
 	}
 	if freshPrefix != "" {
 		if err := m.checkPrefixLocked(freshPrefix); err != nil {
