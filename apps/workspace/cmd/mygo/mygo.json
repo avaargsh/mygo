@@ -1,0 +1,19 @@
+{
+  "name": "MyGo Workspace",
+  "slug": "mygo-workspace",
+  "identifier": "io.github.avaargsh.mygo.workspace",
+  "version": "0.1.0",
+  "out": "dist",
+  "linux": {
+    "webview": true,
+    "comment": "Local-first personal AI workspace",
+    "categories": [
+      "Utility",
+      "Development"
+    ],
+    "command": "mygo-workspace",
+    "formats": [
+      "deb"
+    ]
+  }
+}
