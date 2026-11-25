@@ -29,6 +29,10 @@ type TextSnapshot struct{ digests map[string]string }
 // Missing approved files are errors. Use an explicitly refreshed allowlist for
 // deletions. An explicit empty list is valid for change detection, not indexing.
 func CaptureTextSnapshot(ctx context.Context, root string, paths []string) (TextSnapshot, error) {
+	return captureText(ctx, root, paths, nil)
+}
+
+func captureText(ctx context.Context, root string, paths []string, consume func(string, []byte) error) (TextSnapshot, error) {
 	if ctx == nil || paths == nil || len(paths) > 32 {
 		return TextSnapshot{}, errors.New("invalid snapshot scope")
 	}
@@ -61,6 +65,11 @@ func CaptureTextSnapshot(ctx context.Context, root string, paths []string) (Text
 		}
 		if !utf8.Valid(data) {
 			return TextSnapshot{}, errors.New("source is not UTF-8")
+		}
+		if consume != nil {
+			if err := consume(name, data); err != nil {
+				return TextSnapshot{}, err
+			}
 		}
 		digest := sha256.Sum256(data)
 		digests[name] = hex.EncodeToString(digest[:])
