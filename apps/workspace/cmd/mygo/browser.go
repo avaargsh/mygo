@@ -1,8 +1,6 @@
 package main
 
 import (
-	"errors"
-
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/apps/workspace/core"
 	"github.com/egoist/mygo/ui"
@@ -23,7 +21,7 @@ func (s *shell) navigateBrowser(b *browserSession) {
 	}
 	if b.view == nil {
 		if s.window == nil {
-			s.status = errors.New("desktop window not ready").Error()
+			s.status = "desktop window not ready"
 			return
 		}
 		view, err := s.window.NewWebView(mygo.WebViewOptions{
@@ -86,9 +84,7 @@ func (s *shell) renderBrowser(c *ui.Context, snapshot core.WorkspaceSnapshot, pa
 		ui.Button(c, "Close browser page").Disabled(b.view == nil).OnClick(func() { s.releaseBrowser(b) })
 	})
 	ui.Row(c).Gap(spaceControl).Children(func() {
-		if ui.TextInput(c, &b.address).Label("Browser address").Placeholder("https://example.org").Grow(1).Submitted() {
-			s.navigateBrowser(b)
-		}
+		ui.TextInput(c, &b.address).Label("Browser address").Placeholder("https://example.org").Grow(1).OnSubmit(func() { s.navigateBrowser(b) })
 		ui.Button(c, "Go").OnClick(func() { s.navigateBrowser(b) })
 	})
 	if b.view != nil {
