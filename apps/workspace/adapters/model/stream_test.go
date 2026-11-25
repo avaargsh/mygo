@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 const streamText = `data: {"choices":[{"index":0,"delta":{"role":"assistant","content":"hello "}}]}` + "\r\n\r\n" + `data: {"choices":[{"index":0,"delta":{"content":"world"}}]}` + "\n\n" + `data: {"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}` + "\n\n" + "data: [DONE]\n\n"
@@ -116,5 +117,38 @@ func TestStreamRejectsWrongContentType(t *testing.T) {
 	defer c.Close()
 	if _, err = c.Stream(context.Background(), "", []Message{{Role: "user", Content: "hello"}}, func(string) error { return nil }); err == nil {
 		t.Fatal("non-SSE response accepted")
+	}
+}
+
+func TestStreamDeliversBeforeServerFinishes(t *testing.T) {
+	ack := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, `data: {"choices":[{"index":0,"delta":{"content":"first"}}]}`+"\n\n")
+		w.(http.Flusher).Flush()
+		select {
+		case <-ack:
+		case <-r.Context().Done():
+			return
+		}
+		fmt.Fprint(w, `data: {"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}`+"\n\ndata: [DONE]\n\n")
+	}))
+	defer server.Close()
+	c, err := NewClient(server.URL+"/v1/chat/completions", "model")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	got, err := c.Stream(ctx, "", []Message{{Role: "user", Content: "hello"}}, func(s string) error {
+		if s != "first" {
+			return errors.New("unexpected chunk")
+		}
+		close(ack)
+		return nil
+	})
+	if err != nil || got.Text != "first" {
+		t.Fatalf("stream was not delivered incrementally: %+v, %v", got, err)
 	}
 }
