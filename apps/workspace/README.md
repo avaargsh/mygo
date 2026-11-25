@@ -48,7 +48,7 @@ untrusted page options; it does not establish browser storage isolation.
 - cmd/mygo is the native UI composition root. Only the UI thread mutates
   the workspace. The workspace owns the layout and panes; layout leaves and
   pane identities must match. Tab IDs are unique across the workspace. Background services must later marshal commands to that owner.
-- The content manager registers Home, Runtime info, Notes and Browser as built-in
+- The content manager registers Home, Runtime info, Notes, Browser and Terminal as built-in
   singleton sessions. Closing a tab leaves the session alive until process
   exit; multiple views share one session. Unknown providers are rejected and
   failed opens can be retried. Multiple instances and resourceful session
@@ -153,3 +153,35 @@ two browser core files match the remotely committed Git blob hashes.
 Native integration and headless shell acceptance test are unexecuted
 because GitHub DNS and the required full Go 1.27.3+ toolchain remain
 unavailable locally.
+
+## Terminal (M2 third slice)
+
+Open Terminal and explicitly choose Start shell. The existing MyGo terminal
+plugin starts the user's local default shell with Ghostty/libghostty-vt.
+No shell starts from a restored tab, nor is any command automatically typed.
+The lifecycle owner distinguishes idle, active (running or launching),
+stopping, and exited. Exit code is available only after the plugin's Done
+signal. Natural exit keeps output until released; Close terminal requests
+teardown and refuses a replacement until Done. Closing a tab leaves the
+session active, and Close hidden terminal releases a hidden session.
+Only one pane mounts the singleton terminal; window closure requests cleanup.
+Program-initiated clipboard reads and writes are denied in the plugin options.
+The user's interactive shell runs with the user's normal privileges; it is
+not an agent command API or a sandbox.
+
+On a compatible graphical host, prepare the native terminal library as in
+docs/plugins/terminal.md (the MyGo CLI packages native libraries). Run the
+repository build and tests, then launch the workspace and open Terminal.
+Explicitly start the shell, type a harmless command, switch/split/move views,
+reopen a closed tab, exit the shell, inspect the exit code, restart, close
+the hidden terminal, and confirm that the process exits. Save the workspace,
+restart and verify the restored terminal remains idle. Check the native
+library loading error path. Descendant process cleanup and platform-specific
+PTY behavior are not yet verified.
+
+Actual local evidence: Go 1.23.2, isolated Core 27/27 tests (3 new lifecycle
+tests RED to GREEN), race and vet passed. New terminal core file hashes
+match the committed blobs. The lifecycle tests use a fake resource with a
+controllable Done signal; they do not execute a native shell. The desktop
+integration test, full module build and native Ghostty/PTTY smoke remain
+pending. The user's updated host is not connected to this execution container.
