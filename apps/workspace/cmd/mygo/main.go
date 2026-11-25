@@ -16,6 +16,7 @@ import (
 
 type shell struct {
 	workspace *core.Workspace
+	content   *core.ContentManager
 	sequence  int
 	status    string
 	statePath string
@@ -84,7 +85,12 @@ func (s *shell) apply(err error) {
 	s.dirty = true
 }
 
-func (s *shell) open(sessionID, title string) {
+func (s *shell) open(sessionID string) {
+	session, err := s.content.Open(sessionID)
+	if err != nil {
+		s.apply(err)
+		return
+	}
 	snapshot := s.workspace.Snapshot()
 	paneID := snapshot.ActivePane
 	for _, tab := range snapshot.Panes[paneID].Tabs {
@@ -93,7 +99,7 @@ func (s *shell) open(sessionID, title string) {
 			return
 		}
 	}
-	s.apply(s.workspace.Open(paneID, core.Tab{ID: s.nextID("tab"), SessionID: sessionID, Title: title}))
+	s.apply(s.workspace.Open(paneID, core.Tab{ID: s.nextID("tab"), SessionID: session.ID, Title: session.Title}))
 }
 
 func (s *shell) split(direction core.Direction) {
@@ -144,8 +150,9 @@ func (s *shell) view(c *ui.Context) {
 				}
 				ui.Button(c.Key("theme-"+mode), label).OnClick(func() { s.setTheme(mode) })
 			}
-			ui.Button(c.Key("open-home"), "Home").OnClick(func() { s.open("home", "Home") })
-			ui.Button(c.Key("open-runtime"), "Runtime info").OnClick(func() { s.open("runtime", "Runtime info") })
+			ui.Button(c.Key("open-home"), "Home").OnClick(func() { s.open("home") })
+			ui.Button(c.Key("open-runtime"), "Runtime info").OnClick(func() { s.open("runtime") })
+			ui.Button(c.Key("open-notes"), "Notes").OnClick(func() { s.open("notes") })
 			ui.Button(c.Key("split-right"), "Split right").OnClick(func() { s.split(core.Horizontal) })
 			ui.Button(c.Key("split-down"), "Split down").OnClick(func() { s.split(core.Vertical) })
 			ui.Button(c.Key("move-next"), "Move tab to next pane").Disabled(len(snapshot.Panes) < 2 || active.ActiveTab == "").OnClick(s.moveNext)
@@ -159,6 +166,10 @@ func (s *shell) view(c *ui.Context) {
 			saved = "Unsaved changes"
 		}
 		ui.Text(c, fmt.Sprintf("Development build · %d panes · %s", len(snapshot.Panes), saved)).FontSize(fontSmall).TextColor(c.Theme().TextMuted)
+		if n := s.note(); n != nil && n.Dirty() {
+			ui.Text(c, "Notes have unsaved changes").FontSize(fontSmall)
+			ui.Button(c.Key("save-dirty-note"), "Save note changes").OnClick(s.saveNote)
+		}
 		if s.status != "" {
 			ui.Text(c, s.status)
 		}
@@ -226,7 +237,13 @@ func (s *shell) renderPane(c *ui.Context, snapshot core.WorkspaceSnapshot, id st
 }
 
 func (s *shell) renderContent(c *ui.Context, sessionID string) {
-	switch sessionID {
+	session := s.content.Session(sessionID)
+	if session == nil {
+		ui.Text(c, "Content session unavailable: "+sessionID)
+		ui.Button(c.Key("retry-content"), "Retry content").OnClick(func() { s.open(sessionID) })
+		return
+	}
+	switch session.ID {
 	case "home":
 		ui.Text(c, "Your Personal AI Workspace").FontSize(24).Bold()
 		ui.Text(c, "Open Runtime info to inspect this running application.")
@@ -235,6 +252,15 @@ func (s *shell) renderContent(c *ui.Context, sessionID string) {
 		ui.Text(c, fmt.Sprintf("Platform: %s/%s", runtime.GOOS, runtime.GOARCH))
 		ui.Text(c, fmt.Sprintf("Logical CPUs available at startup: %d", runtime.NumCPU()))
 		ui.Text(c, "Go runtime: "+runtime.Version())
+	case "notes":
+		n, ok := session.Value.(*core.Note)
+		if !ok || n == nil {
+			ui.Text(c, "Notes session unavailable")
+			return
+		}
+		ui.Text(c, "Markdown note").FontSize(fontTitle).Bold()
+		ui.TextArea(c, &n.Text).Label("Markdown source").Placeholder("Write Markdown…").Grow(1).MaxLength(1 << 18)
+		ui.Button(c, "Save note").OnClick(s.saveNote)
 	default:
 		ui.Text(c, "Content provider unavailable: "+sessionID)
 	}
@@ -263,10 +289,22 @@ func main() {
 	if err != nil {
 		log.Fatalf("Cannot restore workspace %s (original file preserved): %v", path, err)
 	}
-	s := &shell{workspace: w, statePath: path, theme: theme}
+	content, err := builtInContent(dir)
+	if err != nil {
+		log.Fatal(err)
+	}
+	s := &shell{workspace: w, content: content, statePath: path, theme: theme}
+	for _, pane := range w.Snapshot().Panes {
+		for _, tab := range pane.Tabs {
+			if _, err := content.Open(tab.SessionID); err != nil {
+				s.status = "Restore content failed: " + err.Error()
+				log.Print(s.status)
+			}
+		}
+	}
 	applyTheme(theme)
 	if fresh {
-		s.open("home", "Home")
+		s.open("home")
 	}
 	mygo.App.WhenReady(func() {
 		mygo.NewWindow(mygo.WindowOptions{
