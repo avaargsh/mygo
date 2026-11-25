@@ -359,6 +359,11 @@ func main() {
 			Content: ui.View(s.view),
 		})
 		s.window.OnClosed(func() {
+			if session := s.content.Session("browser"); session != nil {
+				if browser, ok := session.Value.(*browserSession); ok && browser != nil {
+					s.releaseBrowser(browser)
+				}
+			}
 			if f := s.filesSession(); f != nil {
 				if err := f.close(); err != nil {
 					log.Print("files shutdown: ", err)
