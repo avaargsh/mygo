@@ -155,6 +155,7 @@ func (s *shell) view(c *ui.Context) {
 			ui.Button(c.Key("open-runtime"), "Runtime info").OnClick(func() { s.open("runtime") })
 			ui.Button(c.Key("open-notes"), "Notes").OnClick(func() { s.open("notes") })
 			ui.Button(c.Key("open-browser"), "Browser").OnClick(func() { s.open("browser") })
+			ui.Button(c.Key("open-terminal"), "Terminal").OnClick(func() { s.open("terminal") })
 			ui.Button(c.Key("split-right"), "Split right").OnClick(func() { s.split(core.Horizontal) })
 			ui.Button(c.Key("split-down"), "Split down").OnClick(func() { s.split(core.Vertical) })
 			ui.Button(c.Key("move-next"), "Move tab to next pane").Disabled(len(snapshot.Panes) < 2 || active.ActiveTab == "").OnClick(s.moveNext)
@@ -175,6 +176,14 @@ func (s *shell) view(c *ui.Context) {
 		if session := s.content.Session("browser"); session != nil {
 			if browser, ok := session.Value.(*browserSession); ok && browser.view != nil && core.SessionOwner(snapshot, "browser") == "" {
 				ui.Button(c.Key("release-hidden-browser"), "Close hidden browser page").OnClick(func() { s.releaseBrowser(browser) })
+			}
+		}
+		if t := s.terminalSession(); t != nil && core.SessionOwner(snapshot, "terminal") == "" {
+			if t.Resource() != nil {
+				ui.Button(c.Key("close-hidden-terminal"), "Close hidden terminal").OnClick(func() { s.stopTerminal(t) })
+			}
+			if t.State() == core.TerminalStopping {
+				ui.Text(c, "Hidden terminal stopping…").FontSize(fontSmall)
 			}
 		}
 		if s.status != "" {
@@ -265,6 +274,12 @@ func (s *shell) renderContent(c *ui.Context, snapshot core.WorkspaceSnapshot, pa
 		} else {
 			ui.Text(c, "Browser session unavailable")
 		}
+	case "terminal":
+		if t, ok := session.Value.(*core.TerminalSession); ok && t != nil {
+			s.renderTerminal(c, snapshot, paneID, t)
+		} else {
+			ui.Text(c, "Terminal session unavailable")
+		}
 	case "notes":
 		n, ok := session.Value.(*core.Note)
 		if !ok || n == nil {
@@ -325,6 +340,13 @@ func main() {
 			Width:   1000,
 			Height:  680,
 			Content: ui.View(s.view),
+		})
+		s.window.OnClosed(func() {
+			if t := s.terminalSession(); t != nil {
+				if err := t.Stop(); err != nil {
+					log.Print("terminal shutdown: ", err)
+				}
+			}
 		})
 	})
 	if err := mygo.App.Run(); err != nil {
