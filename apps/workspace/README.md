@@ -48,7 +48,7 @@ untrusted page options; it does not establish browser storage isolation.
 - cmd/mygo is the native UI composition root. Only the UI thread mutates
   the workspace. The workspace owns the layout and panes; layout leaves and
   pane identities must match. Tab IDs are unique across the workspace. Background services must later marshal commands to that owner.
-- The content manager registers Home, Runtime info, Notes, Browser and Terminal as built-in
+- The content manager registers Home, Runtime info, Notes, Browser, Terminal and Files as built-in
   singleton sessions. Closing a tab leaves the session alive until process
   exit; multiple views share one session. Unknown providers are rejected and
   failed opens can be retried. Multiple instances and resourceful session
@@ -185,3 +185,36 @@ match the committed blobs. The lifecycle tests use a fake resource with a
 controllable Done signal; they do not execute a native shell. The desktop
 integration test, full module build and native Ghostty/PTTY smoke remain
 pending. The user's updated host is not connected to this execution container.
+
+## Files (M2 fourth slice)
+
+Open Files, choose a folder using the native picker, and browse its directory
+entries. Parent and Refresh are supported. The production adapter uses Go
+os.OpenRoot and Root.FS for traversal containment; the core validates single
+directory names and refuses non-directory entries. Root grants are memory-only
+and can be revoked even when their view is hidden. Restoring a Files tab does
+not access any directory. No file content preview, editing, upload, recursive
+scan or deletion is implemented. Directory reads are synchronous; the
+5000-entry display limit is checked after enumeration. Large or slow
+filesystems still need a bounded asynchronous listing implementation.
+
+Core tests: 30/30 passed in the isolated Go 1.23.2 container, including 3 new
+RED-to-GREEN file navigation tests, race detection and vet. The remote files.go
+and files_test.go hashes match the locally tested source. Native root grant
+test and complete UI compilation require the module's Go 1.27.3+ toolchain
+and have not been executed here.
+
+## Cloud development host verification
+
+From a clean checkout of the exact PR commit in the already configured
+Go 1.27.4 cloud-host environment, run:
+
+    bash apps/workspace/verify-cloud.sh
+
+This records the HEAD and Go version, verifies dependencies, executes
+Workspace tests and Core race tests, runs vet, builds the entire repository
+and emits the desktop binary and log in a temporary evidence directory.
+Set MYGO_FULL_TEST=1 to additionally run the entire repository test suite.
+No package install, checkout reset or automatic desktop launch occurs.
+The script is syntax-checked but not yet executed on the updated cloud host
+from this conversation. Real display/WebView/PTY smoke tests remain separate.
