@@ -84,7 +84,7 @@ func (s *shell) renderBrowser(c *ui.Context, snapshot core.WorkspaceSnapshot, pa
 		ui.Button(c, "Close browser page").Disabled(b.view == nil).OnClick(func() { s.releaseBrowser(b) })
 	})
 	ui.Row(c).Gap(spaceControl).Children(func() {
-		ui.TextInput(c, &b.address).Label("Browser address").Placeholder("https://example.org").Grow(1).OnSubmit(func() { s.navigateBrowser(b) })
+		ui.TextInput(c, &b.address).Label("Browser address").Placeholder("https://example.org").Grow(1)
 		ui.Button(c, "Go").OnClick(func() { s.navigateBrowser(b) })
 	})
 	if b.view != nil {
