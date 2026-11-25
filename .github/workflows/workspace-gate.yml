@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [main, feat/workspace-m0-foundation]
+    branches: [main, feat/workspace-m0-foundation, test/workspace-native-smoke]
   workflow_dispatch:
 
 permissions:
@@ -52,3 +52,9 @@ jobs:
         run: |
           go vet ./apps/workspace/...
           go build -o "$RUNNER_TEMP/mygo-workspace" ./apps/workspace/cmd/mygo
+      - name: Prefetch pinned libraries
+        run: go run ./internal/prefetch
+      - name: Run workspace native E2E
+        env:
+          MYGO_E2E: 1
+        run: xvfb-run -a dbus-run-session -- go test -v -count=1 -timeout=5m -run '^TestWorkspaceNative' ./internal/e2e
