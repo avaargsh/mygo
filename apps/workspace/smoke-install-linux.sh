@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# CI acceptance only: install the locally built preview into a disposable HOME.
+# CI acceptance only: exercise a local build in a disposable HOME.
 set -euo pipefail
-if [[ $# -ne 1 ]]; then
-  echo 'Usage: smoke-install-linux.sh DIST_DIRECTORY' >&2
+if [[ $# -lt 1 || $# -gt 2 || ( $# == 2 && $2 != --deb-installed ) ]]; then
+  echo 'Usage: smoke-install-linux.sh DIST_DIRECTORY [--deb-installed]' >&2
   exit 2
 fi
 dist=$(cd "$1" && pwd -P)
+mode=${2:-}
 work=$(mktemp -d)
 pid=''
 cleanup() {
@@ -28,11 +29,25 @@ export XDG_CACHE_HOME="$HOME/.cache"
 mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME"
 cd "$dist"
 sha256sum -c SHA256SUMS
-sh ./install.sh ./mygo-workspace-0.1.0-linux-amd64.tar.gz
-launcher="$HOME/.local/bin/mygo-workspace"
+archive=mygo-workspace-0.1.0-linux-amd64.tar.gz
+if [[ "$mode" == --deb-installed ]]; then
+  test "$(dpkg-query -W -f='${Status} ${Version}' mygo-workspace)" = 'install ok installed 0.1.0'
+  launcher=/usr/bin/mygo-workspace
+  app=/opt/mygo-workspace
+  installed_notice=/usr/share/doc/mygo-workspace/copyright
+  desktop=/usr/share/applications/mygo-workspace.desktop
+else
+  sh ./install.sh "./$archive"
+  launcher="$HOME/.local/bin/mygo-workspace"
+  app="$HOME/.local/mygo-workspace.app"
+  installed_notice="$app/copyright"
+  desktop="$XDG_DATA_HOME/applications/mygo-workspace.desktop"
+fi
 test -x "$launcher"
-test -s "$HOME/.local/mygo-workspace.app/libghostty-vt.so"
-test -s "$XDG_DATA_HOME/applications/mygo-workspace.desktop"
+test -s "$app/libghostty-vt.so"
+test -s "$installed_notice"
+tar -xOzf "$archive" copyright | cmp - "$installed_notice"
+test -s "$desktop"
 start_app() {
   "$launcher" >>"$work/app.log" 2>&1 &
   pid=$!
@@ -91,6 +106,10 @@ wait_for_state
 cmp "$work/expected.json" "$state"
 close_app
 echo 'PASS: installed save, graceful close, restart and restored layout'
+if [[ "$mode" == --deb-installed ]]; then
+  echo 'PASS: apt-installed app startup and installed copyright'
+  exit 0
+fi
 printf 'retained data\n' > "$XDG_CONFIG_HOME/MyGoWorkspace/acceptance-marker"
 sh ./install.sh --uninstall
 test ! -e "$launcher"
