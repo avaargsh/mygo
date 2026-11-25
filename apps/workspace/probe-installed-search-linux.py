@@ -175,7 +175,12 @@ def exercise_workspace():
                 and bounds.y + bounds.height <= window.y + window.height
             ):
                 raise RuntimeError(f"Send message is clipped: control {bounds}, window {window}")
-            click("Send message")
+            # Exercise the real accessible button action. A centered X11 click
+            # can hit an overlapping element in a split pane; keyboard input
+            # above still goes through X11 and is checked against the editor.
+            action = send.queryAction()
+            if not action.doAction(0):
+                raise RuntimeError("Native Send message action was not accepted")
             if not model_requested.wait(10):
                 labels = sorted({node.name for node in walk(pyatspi.Registry.getDesktop(0)) if node.name})
                 raise RuntimeError(f"Chat did not reach the local model fixture. Labels: {labels[:100]}")
