@@ -21,7 +21,6 @@ func TestLinuxProviderSamplesRealisticProcfsAndCPUDelta(t *testing.T) {
 	fsRoot := t.TempDir()
 	writeFixture(t, proc, "stat", "cpu 100 0 100 800 0 0 0 0\n")
 	writeFixture(t, proc, "meminfo", "MemTotal: 1024000 kB\nMemAvailable: 256000 kB\n")
-	writeFixture(t, proc, "net", "")
 	if err := os.Mkdir(filepath.Join(proc, "net"), 0700); err != nil {
 		t.Fatal(err)
 	}
