@@ -21,9 +21,9 @@ var indexName = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,127}$`)
 // Hit is untrusted retrieved content, not an instruction or a verified citation.
 type Hit struct {
 	Index string `json:"index"`
-	Path string `json:"path"`
-	Line int    `json:"line,omitempty"`
-	Text string `json:"text"`
+	Path  string `json:"path"`
+	Line  int    `json:"line,omitempty"`
+	Text  string `json:"text"`
 }
 
 type Client struct {
