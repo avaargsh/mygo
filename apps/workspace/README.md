@@ -242,3 +242,20 @@ including race detection and vet, on Go 1.23.2. These checks used a temporary
 local compatibility shim for the x/sys Statfs API and do not replace the
 repository's full Go 1.27.3+ build. The exact Linux provider integration,
 native UI build and updated cloud-host verification remain pending.
+
+## Files text preview (M2 sixth slice)
+
+Files now marks regular files and symlinks separately. A selected regular file
+can be previewed as UTF-8 text. The core only reads a single filename present
+in the current directory snapshot, rejects path separators, directories,
+symlinks and non-regular files, checks the opened file type and size, and
+limits one read to at most 1 MiB. The UI uses a stricter 256 KiB limit and
+rejects invalid UTF-8. Preview is read-only; there is no edit, save, delete,
+upload, recursive indexing or arbitrary file-open action. A directory grant
+is still memory-only and revocable.
+
+The file provider remains synchronous. Large directory enumeration and
+preview reads may block the UI; bounded asynchronous I/O and cancellation
+are follow-up work. The OS-root adapter confines access to the selected root,
+but this feature is not a malware scanner and does not inspect file contents
+for safety.
