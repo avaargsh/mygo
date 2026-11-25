@@ -11,7 +11,7 @@ import (
 
 func TestChatInstanceArchivesDoNotOverwriteEachOther(t *testing.T) {
 	s := closeFixture(t)
-	ids := []string{"chat-instance-00000000000000000000000000000001", "chat-instance-00000000000000000000000000000002"}
+	ids := []string{"chat", "chat-instance-00000000000000000000000000000001", "chat-instance-00000000000000000000000000000002"}
 	for _, id := range ids {
 		session, err := restoreContentSession(s.content, id)
 		if err != nil {
@@ -33,6 +33,9 @@ func TestChatInstanceArchivesDoNotOverwriteEachOther(t *testing.T) {
 		}
 		ch.archiveConfirm = true
 		s.saveChatArchive(ch)
+		if s.status != "Chat archive saved locally" {
+			t.Fatalf("save %s: %s", id, s.status)
+		}
 	}
 	fresh, err := builtInContent(filepath.Dir(s.statePath))
 	if err != nil {
@@ -48,7 +51,7 @@ func TestChatInstanceArchivesDoNotOverwriteEachOther(t *testing.T) {
 		s.loadChatArchive(ch)
 		snapshot := ch.chat.Snapshot()
 		if len(snapshot.Turns) != 1 || snapshot.Turns[0].Assistant != id || !ch.confirmConnection || snapshot.Active {
-			t.Fatal("archive crossed session boundaries or bypassed confirmation")
+			t.Fatalf("restore %s: %s; wrong history or confirmation state", id, s.status)
 		}
 	}
 }

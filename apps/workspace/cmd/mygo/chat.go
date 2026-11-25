@@ -172,7 +172,7 @@ func (s *shell) loadChatArchive(ch *chatViewSession) {
 		s.status = "Clear the conversation, draft and credential before loading"
 		return
 	}
-	endpoint, modelName, err := ch.chat.RestoreArchive(filepath.Join(filepath.Dir(s.statePath), "chat.json"))
+	endpoint, modelName, err := ch.chat.RestoreArchive(s.chatArchivePath(ch))
 	if err != nil {
 		s.status = "Chat archive load failed: " + err.Error()
 		return
