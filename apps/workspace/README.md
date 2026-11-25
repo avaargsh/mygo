@@ -295,9 +295,32 @@ transport errors are not exposed. Model replies containing tool calls or
 legacy function calls are rejected. Returned text is untrusted content, not
 an instruction to execute.
 
-This is a non-streaming transport only; it has not been wired into a Chat
-Tab or keychain. No live external model or private gateway was contacted.
+The non-streaming transport has not been wired into a Chat Tab or keychain.
+The later streaming slice adds a text-only SSE transport. No live external model or private gateway was contacted.
 The six adapter tests ran against local httptest servers with Go 1.23.2,
 including a RED-to-GREEN regression for legacy function replies. Race and
 vet passed. The two remote blobs match the exact locally tested files.
 Full repository/native UI and Go 1.27.4 cloud verification remain pending.
+
+
+## Model SSE transport (M3 second slice)
+
+Client.Stream shares the existing validated request, endpoint and credential
+boundary with Complete. It requests stream=true and requires text/event-stream.
+Each nonempty text delta is delivered synchronously to the caller; the caller
+must return promptly and retain partial text separately if desired. A successful
+Completion requires both a supported finish reason and a [DONE] event. EOF,
+cancellation, callback failure, malformed events, unsupported tool/function
+calls and unsupported choices fail instead of reporting a completed reply.
+The 60-second HTTP timeout still applies. No automatic retry or resume occurs.
+Limits: 256 KiB per SSE line/data event, 8 MiB response body read budget,
+2 MiB accumulated text. Usage-only events after the final choice are ignored.
+Only a single text choice is supported; this is not a general-purpose SSE
+implementation or an Agent execution API.
+
+Local evidence: exact model package sources tested on Go 1.23.2 against
+local HTTP servers. 11 top-level tests passed (6 existing, 5 streaming);
+race and vet passed. Incremental delivery was explicitly verified with a
+server that waited for the consumer callback before sending the finish event.
+Remote blobs match the locally tested sources. No live model, native Chat
+Tab or complete Go 1.27.4 cloud-host build was verified.
