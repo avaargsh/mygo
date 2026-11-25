@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -169,5 +170,38 @@ func TestTerminalRestoredTabDoesNotStartShell(t *testing.T) {
 	restarted := &shell{workspace: restored, content: newContent}
 	if session := restarted.terminalSession(); session == nil || session.State() != core.TerminalIdle {
 		t.Fatal("restored tab not idle")
+	}
+}
+
+func TestFilesRootGrantAndRevoke(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "docs"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	browser, err := core.NewFileBrowser(root.FS())
+	if err != nil {
+		root.Close()
+		t.Fatal(err)
+	}
+	f := &filesSession{root: root, browser: browser, label: dir}
+	defer f.close()
+	if err := browser.Enter("docs"); err != nil {
+		t.Fatal(err)
+	}
+	if err := browser.Up(); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.close(); err != nil {
+		t.Fatal(err)
+	}
+	if f.root != nil || f.browser != nil || f.label != "" {
+		t.Fatal("revoked grant retained")
+	}
+	if err := browser.Refresh(); err == nil {
+		t.Fatal("closed root still accessible")
 	}
 }
