@@ -218,3 +218,27 @@ Set MYGO_FULL_TEST=1 to additionally run the entire repository test suite.
 No package install, checkout reset or automatic desktop launch occurs.
 The script is syntax-checked but not yet executed on the updated cloud host
 from this conversation. Real display/WebView/PTY smoke tests remain separate.
+
+## System Info (M2 fifth slice)
+
+Open System Info and explicitly refresh to sample the local host. Linux currently
+uses procfs CPU counters, MemTotal/MemAvailable, /proc/net/dev interface byte
+counters (loopback excluded), and statfs for the root filesystem. CPU utilization
+is derived from two monotonic counter samples; the first sample intentionally
+shows Sampling rather than a fabricated 0%. Memory uses MemAvailable and is
+reported unavailable if the kernel does not expose it. Disk uses unprivileged
+available blocks. Network values are cumulative byte counters, not rates.
+Refresh is user initiated; there is no background polling.
+
+Each metric is optional. Missing, malformed, overflowing or unsupported data
+is surfaced as Unavailable, never replaced with zero. The Linux provider is
+implemented and fixture-tested. macOS and Windows currently compile through an
+explicit unsupported adapter and report all metrics unavailable; native
+providers for those platforms remain future work. GPU metrics are not part of
+this provider.
+
+Local isolated evidence: 4 core system tests and 6 Linux provider tests passed,
+including race detection and vet, on Go 1.23.2. These checks used a temporary
+local compatibility shim for the x/sys Statfs API and do not replace the
+repository's full Go 1.27.3+ build. The exact Linux provider integration,
+native UI build and updated cloud-host verification remain pending.
