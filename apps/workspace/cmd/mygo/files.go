@@ -20,13 +20,14 @@ type filesSession struct {
 }
 
 func (f *filesSession) close() error {
-	root := f.root
+	if f.root != nil {
+		if err := f.root.Close(); err != nil {
+			return err
+		}
+	}
 	f.root, f.browser, f.label = nil, nil, ""
 	f.previewName, f.preview, f.previewErr = "", "", ""
-	if root == nil {
-		return nil
-	}
-	return root.Close()
+	return nil
 }
 
 func (s *shell) previewFile(f *filesSession, name string) {
@@ -73,9 +74,13 @@ func (s *shell) selectFilesRoot(f *filesSession) {
 		s.status = "Directory listing failed: " + err.Error()
 		return
 	}
-	closeErr := f.close()
+	if err := f.close(); err != nil {
+		root.Close()
+		s.status = "Previous folder access could not be revoked: " + err.Error()
+		return
+	}
 	f.root, f.browser, f.label = root, browser, paths[0]
-	s.fileResult(closeErr)
+	s.fileResult(nil)
 }
 
 func (s *shell) fileResult(err error) {
