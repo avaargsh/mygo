@@ -24,7 +24,8 @@ type manifest struct {
 }
 type manifestBinding struct {
 	Workspace  string     `json:"workspace"`
-	Index      string     `json:"index"`
+	Index      string     `json:"index,omitempty"`
+	Indices    []string   `json:"indices,omitempty"`
 	Generation uint64     `json:"generation"`
 	State      IndexState `json:"state"`
 }
@@ -86,7 +87,7 @@ func OpenPersistentManager(endpoint, path string) (*Manager, error) {
 	if err := d.Decode(new(any)); err != io.EOF {
 		return nil, errors.New("trailing manifest data")
 	}
-	if saved.Version != 1 || saved.Endpoint != endpoint || saved.Reserved == nil || saved.Bindings == nil {
+	if (saved.Version != 1 && saved.Version != 2) || saved.Endpoint != endpoint || saved.Reserved == nil || saved.Bindings == nil {
 		return nil, errors.New("invalid manifest version, endpoint or collections")
 	}
 	m := NewManager(endpoint)
@@ -111,27 +112,48 @@ func OpenPersistentManager(endpoint, path string) (*Manager, error) {
 		if _, ok := m.workspaces[b.Workspace]; ok {
 			return nil, errors.New("duplicate workspace")
 		}
-		if _, ok := m.reserved[b.Index]; !ok || used[b.Index] {
-			return nil, errors.New("invalid index reservation")
+		names := b.Indices
+		if saved.Version == 1 {
+			if b.Indices != nil {
+				return nil, errors.New("unexpected v1 index set")
+			}
+			names = []string{b.Index}
+		} else if b.Index != "" {
+			return nil, errors.New("unexpected v2 legacy index")
 		}
-		client, err := New(endpoint, b.Index)
-		if err != nil {
-			return nil, err
+		if len(names) == 0 || len(names) > 8 {
+			return nil, errors.New("invalid index set size")
 		}
-		used[b.Index] = true
-		m.workspaces[b.Workspace] = binding{status: IndexStatus{State: IndexFailed, Generation: b.Generation}, client: client}
+		sort.Strings(names)
+		clients := make([]*Client, 0, len(names))
+		for _, name := range names {
+			if _, ok := m.reserved[name]; !ok || used[name] {
+				return nil, errors.New("invalid index reservation")
+			}
+			client, err := New(endpoint, name)
+			if err != nil {
+				return nil, err
+			}
+			used[name] = true
+			clients = append(clients, client)
+		}
+		m.workspaces[b.Workspace] = binding{status: IndexStatus{State: IndexFailed, Generation: b.Generation}, clients: clients}
 	}
 	return m, nil
 }
 
 // Caller holds the manager mutex, except during private construction.
 func (m *Manager) manifestBytes() ([]byte, error) {
-	saved := manifest{Version: 1, Endpoint: m.endpoint, Reserved: make([]string, 0, len(m.reserved)), Bindings: make([]manifestBinding, 0, len(m.workspaces))}
+	saved := manifest{Version: 2, Endpoint: m.endpoint, Reserved: make([]string, 0, len(m.reserved)), Bindings: make([]manifestBinding, 0, len(m.workspaces))}
 	for index := range m.reserved {
 		saved.Reserved = append(saved.Reserved, index)
 	}
 	for workspace, b := range m.workspaces {
-		saved.Bindings = append(saved.Bindings, manifestBinding{Workspace: workspace, Index: b.client.index, Generation: b.status.Generation, State: b.status.State})
+		names := make([]string, 0, len(b.clients))
+		for _, c := range b.clients {
+			names = append(names, c.index)
+		}
+		saved.Bindings = append(saved.Bindings, manifestBinding{Workspace: workspace, Indices: names, Generation: b.status.Generation, State: b.status.State})
 	}
 	sort.Strings(saved.Reserved)
 	sort.Slice(saved.Bindings, func(i, j int) bool { return saved.Bindings[i].Workspace < saved.Bindings[j].Workspace })
