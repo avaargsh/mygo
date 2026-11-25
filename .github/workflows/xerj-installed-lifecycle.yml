@@ -1,0 +1,26 @@
+name: XERJ Installed Lifecycle
+on:
+  push:
+    branches: [test/xerj-installed-flow-evidence]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  installed-lifecycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GOTOOLCHAIN: local
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.4'
+      - name: Verify candidate and run installed lifecycle
+        run: |
+          git rev-parse HEAD
+          go version
+          go mod verify
+          bash plugins/xerj/smoke-installed-flow-linux.sh
