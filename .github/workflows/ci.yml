@@ -228,6 +228,9 @@ jobs:
       # about six minutes and, on a slow one beside the other packages,
       # past go test's ten: the same tests, more time.
       - run: go test -timeout ${{ runner.os == 'macOS' && '20m' || '10m' }} ./...
+      - name: Workspace core race detection
+        if: runner.os == 'Linux'
+        run: go test -race ./apps/workspace/core
       # A Rust crate that the CLI builds and package ffi binds, with the
       # cargo of the runners' images, which go test ./... skips unbuilt.
       - name: Test a native library built from its sources
