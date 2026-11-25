@@ -82,3 +82,32 @@ func TestLinuxProviderHonorsCanceledContext(t *testing.T) {
 		t.Fatal("canceled context was ignored")
 	}
 }
+
+func TestReadCPUTimeExcludesGuestCounters(t *testing.T) {
+	proc := t.TempDir()
+	writeFixture(t, proc, "stat", "cpu 100 0 100 800 0 0 0 0 500 500\n")
+	got, err := readCPUTime(filepath.Join(proc, "stat"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Total != 1000 || got.Idle != 800 {
+		t.Fatalf("guest counters must not be double-counted: %+v", got)
+	}
+}
+
+func TestReadMemoryRequiresMemAvailable(t *testing.T) {
+	proc := t.TempDir()
+	writeFixture(t, proc, "meminfo", "MemTotal: 1024 kB\nMemFree: 512 kB\n")
+	if _, _, err := readMemory(filepath.Join(proc, "meminfo")); err == nil {
+		t.Fatal("MemFree was incorrectly substituted for MemAvailable")
+	}
+}
+
+func TestReadNetworkRejectsCounterOverflow(t *testing.T) {
+	proc := t.TempDir()
+	name := filepath.Join(proc, "dev")
+	writeFixture(t, proc, "dev", "eth0: 18446744073709551615 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\neth1: 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n")
+	if _, _, _, err := readNetwork(name); err == nil {
+		t.Fatal("network counter overflow was accepted")
+	}
+}
