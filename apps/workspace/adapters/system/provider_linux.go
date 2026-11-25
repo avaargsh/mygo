@@ -98,6 +98,13 @@ func (p *LinuxProvider) Snapshot(ctx context.Context) (core.SystemSnapshot, erro
 	return s, nil
 }
 
+func add(a, b uint64) (uint64, bool) {
+	if b > math.MaxUint64-a {
+		return 0, false
+	}
+	return a + b, true
+}
+
 func multiply(a, b uint64) (uint64, bool) {
 	if a != 0 && b > math.MaxUint64/a {
 		return 0, false
@@ -123,14 +130,25 @@ func readCPUTime(name string) (core.CPUTime, error) {
 		return core.CPUTime{}, errors.New("invalid aggregate CPU counters")
 	}
 	var total, idle uint64
-	for i, field := range fields[1:] {
+	counters := fields[1:]
+	if len(counters) > 8 {
+		counters = counters[:8]
+	}
+	for i, field := range counters {
 		value, err := strconv.ParseUint(field, 10, 64)
 		if err != nil {
 			return core.CPUTime{}, fmt.Errorf("invalid CPU counter: %w", err)
 		}
-		total += value
+		var ok bool
+		total, ok = add(total, value)
+		if !ok {
+			return core.CPUTime{}, errors.New("CPU counter overflow")
+		}
 		if i == 3 || i == 4 {
-			idle += value
+			idle, ok = add(idle, value)
+			if !ok {
+				return core.CPUTime{}, errors.New("CPU idle counter overflow")
+			}
 		}
 	}
 	if total == 0 || idle > total {
@@ -207,8 +225,14 @@ func readNetwork(name string) (uint64, uint64, int, error) {
 		if err != nil {
 			return 0, 0, 0, fmt.Errorf("invalid transmit counter for %s: %w", iface, err)
 		}
-		received += rx
-		sent += tx
+		received, ok = add(received, rx)
+		if !ok {
+			return 0, 0, 0, errors.New("network receive counter overflow")
+		}
+		sent, ok = add(sent, tx)
+		if !ok {
+			return 0, 0, 0, errors.New("network transmit counter overflow")
+		}
 		interfaces++
 	}
 	if err := scanner.Err(); err != nil {
