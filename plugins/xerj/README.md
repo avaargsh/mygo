@@ -83,3 +83,11 @@ Begin, Publish and Fail persist generation, state and historical exact index res
 Reopening deliberately marks previously known workspaces FAILED, including READY and BUILDING entries. Generation counters and all historical reservations survive, but a fresh verified generation is required before search resumes. Old index names remain unavailable for reuse. The endpoint string is configuration, not a verified node identity. This conservative restart behavior is intentional until corpus identity, worker reconciliation and engine freshness can be verified. No automatic build, cleanup or index reuse is introduced.
 
 Run the additional manifest tests with the package race suite. The tests use real temporary filesystem paths and simulate a failed update by moving the state directory. They do not establish live XERJ behavior or power-loss durability.
+
+## Build coordinator
+
+The optional Manager.Rebuild(ctx, workspaceID, freshExactIndex, build, verify) API reserves a fresh generation, runs the trusted builder, runs the independent trusted verifier, and publishes READY only if both succeed and the generation is still current. It persists transitions when the persistent manager is used.
+
+Callbacks receive a BuildTarget with the exact reserved index, endpoint, workspace and generation. Run off the UI thread and provide a context deadline appropriate to the approved corpus. Callbacks must cooperate with cancellation and restrict work to the dedicated approved corpus/index; they are not a sandbox. A build or verification error marks the current attempt FAILED, and an already superseded attempt cannot overwrite a newer binding. Cancellation observed before publication prevents READY; cancellation can race an already completed publication. Invalid callbacks or a pre-canceled context do not fence a valid current binding.
+
+This is synchronous orchestration, not an XERJ command runner, queue, watcher, or proof that a real corpus is indexed. No CLI invocation or directory discovery is added. Actual builder and verifier adapters must be tested against a pinned real node before enabling user-facing search. The application remains responsible for authorization, resource limits and callback termination.
