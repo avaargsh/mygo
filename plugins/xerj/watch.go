@@ -64,11 +64,14 @@ func (m *Manager) watchSnapshots(ctx context.Context, workspace string, previous
 				if err := ctx.Err(); err != nil {
 					return err
 				}
-				if err := notify(ctx, next); err != nil {
+				if err := notify(ctx, next); err == errRebuildDeferred {
+					stable = stableSamples
+				} else if err != nil {
 					return fmt.Errorf("watch notification: %w", err)
+				} else {
+					dirty = false
+					stable = 0
 				}
-				dirty = false
-				stable = 0
 			}
 		}
 		previous = next
