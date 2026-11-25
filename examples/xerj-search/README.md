@@ -8,7 +8,7 @@ It defaults to DISABLED and performs no engine requests. No core MyGo dependency
 
 ## Optional live fixture
 
-Use only a dedicated disposable numeric-loopback XERJ node that you exclusively own, launched with a pinned independently checksum-verified executable and feedback disabled. Prepare the single synthetic file documented in plugins/xerj/README.md (mygo-xerj-fixture.txt, exact UTF-8 bytes "mygoxerjfixturemarker" followed by a newline), index it in an otherwise empty dedicated exact index, and confirm the index name independently. Do not use personal or shared data. Do not mutate the fixture index during the demo.
+Use only a dedicated disposable numeric-loopback XERJ node that you exclusively own, launched with a pinned independently checksum-verified executable and feedback disabled. Prepare the single synthetic file documented in plugins/xerj/README.md (mygo-xerj-fixture.txt, exact UTF-8 bytes "mygoxerjfixturemarker" with no trailing newline), index it in an otherwise empty dedicated exact index, and confirm the index name independently. Do not use personal or shared data. Do not mutate the fixture index during the demo. For rc.103, the verifier expects the file metadata and single-section pair with exact source bytes. Create the file using `printf %s mygoxerjfixturemarker > mygo-xerj-fixture.txt`, not echo. A changed or normalized body is rejected.
 
     export MYGO_XERJ_PANEL=1
     export MYGO_XERJ_ENDPOINT=http://127.0.0.1:9200
