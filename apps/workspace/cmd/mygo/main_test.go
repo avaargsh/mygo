@@ -119,3 +119,55 @@ func TestBrowserSessionStartsWithoutNativeResource(t *testing.T) {
 		t.Fatal("release did not leave an empty browser")
 	}
 }
+
+func TestTerminalRestoredTabDoesNotStartShell(t *testing.T) {
+	w, err := core.NewWorkspace("root")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	content, err := builtInContent(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &shell{workspace: w, content: content}
+	s.open("terminal")
+	session := s.terminalSession()
+	if session == nil || session.State() != core.TerminalIdle {
+		t.Fatal("opening terminal tab started a process")
+	}
+	s.startTerminal(session)
+	if session.State() != core.TerminalIdle || s.status != "desktop window not ready" {
+		t.Fatal("headless terminal started a process")
+	}
+	snapshot := w.Snapshot()
+	if err := w.Close("root", snapshot.Panes["root"].ActiveTab); err != nil {
+		t.Fatal(err)
+	}
+	s.open("terminal")
+	if s.terminalSession() != session {
+		t.Fatal("closing view evicted terminal session")
+	}
+	if err := core.SaveState(filepath.Join(dir, "state.json"), w, "system"); err != nil {
+		t.Fatal(err)
+	}
+	restored, _, err := core.LoadState(filepath.Join(dir, "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	newContent, err := builtInContent(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, pane := range restored.Snapshot().Panes {
+		for _, tab := range pane.Tabs {
+			if _, err := newContent.Open(tab.SessionID); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	restarted := &shell{workspace: restored, content: newContent}
+	if session := restarted.terminalSession(); session == nil || session.State() != core.TerminalIdle {
+		t.Fatal("restored tab not idle")
+	}
+}
