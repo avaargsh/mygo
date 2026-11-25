@@ -15,8 +15,13 @@ func TestWorkspaceShellSplitMoveSave(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := &shell{workspace: w, theme: "system", statePath: filepath.Join(t.TempDir(), "state.json")}
-	s.open("home", "Home")
+	dir := t.TempDir()
+	content, err := builtInContent(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &shell{workspace: w, content: content, theme: "system", statePath: filepath.Join(dir, "state.json")}
+	s.open("home")
 	tt := ui.NewTester(s.view, 1600, 900)
 	for _, label := range []string{"Split right", "Runtime info", "Move tab to next pane", "Save workspace"} {
 		if err := tt.Click(label); err != nil {
@@ -33,5 +38,44 @@ func TestWorkspaceShellSplitMoveSave(t *testing.T) {
 	}
 	if theme != "system" || !reflect.DeepEqual(snapshot, restored.Snapshot()) {
 		t.Fatal("saved state differs from displayed workspace")
+	}
+}
+
+func TestNotesSessionSurvivesClosingView(t *testing.T) {
+	dir := t.TempDir()
+	w, err := core.NewWorkspace("root")
+	if err != nil {
+		t.Fatal(err)
+	}
+	content, err := builtInContent(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &shell{workspace: w, content: content, theme: "system", statePath: filepath.Join(dir, "state.json")}
+	s.open("notes")
+	n := s.note()
+	if n == nil {
+		t.Fatal("notes session not opened")
+	}
+	n.Text = "# Draft"
+	snapshot := w.Snapshot()
+	if err := w.Close("root", snapshot.Panes["root"].ActiveTab); err != nil {
+		t.Fatal(err)
+	}
+	s.open("notes")
+	if s.note() != n || s.note().Text != "# Draft" || !n.Dirty() {
+		t.Fatal("draft lost on closing view")
+	}
+	s.saveNote()
+	restarted, err := builtInContent(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := restarted.Open("notes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if note := session.Value.(*core.Note); note.Text != "# Draft" || note.Dirty() {
+		t.Fatal("saved draft not restored")
 	}
 }
