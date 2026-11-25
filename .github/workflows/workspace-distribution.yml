@@ -2,7 +2,7 @@ name: Workspace Distribution
 
 on:
   push:
-    branches: [main, test/workspace-linux-notices]
+    branches: [main, test/workspace-linux-notices, test/workspace-cloud-acceptance]
   workflow_dispatch:
 
 permissions:

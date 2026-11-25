@@ -9,10 +9,17 @@ dist=$(cd "$1" && pwd -P)
 mode=${2:-}
 work=$(mktemp -d)
 pid=''
+wid=''
 cleanup() {
   rc=$?
   if [[ -n "$pid" ]]; then
     kill "$pid" 2>/dev/null || true
+    # A failed UI assertion can leave a dirty test window or dialog open.
+    for ((i=0; i<20; i++)); do
+      if ! kill -0 "$pid" 2>/dev/null; then break; fi
+      sleep 0.1
+    done
+    if (( i == 20 )); then kill -KILL "$pid" 2>/dev/null || true; fi
     wait "$pid" 2>/dev/null || true
   fi
   if [[ $rc != 0 && -f "$work/app.log" ]]; then
@@ -74,6 +81,40 @@ close_app() {
   echo 'Workspace did not close normally' >&2
   return 1
 }
+find_close_dialog() {
+  local id
+  while IFS= read -r id; do
+    if [[ "$id" =~ ^[0-9]+$ && "$id" != "$wid" ]]; then
+      printf '%s\n' "$id"
+      return 0
+    fi
+  done < <(xdotool search --onlyvisible --name '^MyGo Workspace$')
+  return 1
+}
+cancel_dirty_close() {
+  local dialog='' i
+  xdotool key --clearmodifiers ctrl+w
+  for ((i=0; i<100; i++)); do
+    kill -0 "$pid" || { echo 'Workspace exited without protecting changes' >&2; return 1; }
+    if dialog=$(find_close_dialog); then break; fi
+    sleep 0.2
+  done
+  [[ -n "$dialog" ]] || { echo 'Unsaved-change dialog did not appear' >&2; return 1; }
+  timeout 5s xdotool windowfocus --sync "$dialog"
+  xdotool key --clearmodifiers Escape
+  for ((i=0; i<100; i++)); do
+    kill -0 "$pid" || { echo 'Cancel did not keep the Workspace open' >&2; return 1; }
+    if ! find_close_dialog >/dev/null; then
+      timeout 5s xdotool windowfocus --sync "$wid"
+      [[ ! -e "$state" ]] || { echo 'Cancel unexpectedly wrote workspace state' >&2; return 1; }
+      echo 'PASS: canceling an unsaved close keeps the installed Workspace open without writing state'
+      return
+    fi
+    sleep 0.2
+  done
+  echo 'Unsaved-change dialog did not close after Escape' >&2
+  return 1
+}
 wait_for_state() {
   for ((i=0; i<100; i++)); do
     [[ ! -s "$state" ]] || return 0
@@ -84,6 +125,7 @@ wait_for_state() {
 state="$XDG_CONFIG_HOME/MyGoWorkspace/state.json"
 start_app
 xdotool key --clearmodifiers ctrl+shift+e
+cancel_dirty_close
 xdotool key --clearmodifiers ctrl+s
 wait_for_state
 python3 - "$state" <<'PY'
