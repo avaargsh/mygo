@@ -2,8 +2,11 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 	"runtime"
 
 	"github.com/egoist/mygo"
@@ -15,11 +18,60 @@ type shell struct {
 	workspace *core.Workspace
 	sequence  int
 	status    string
+	statePath string
+	theme     string
+	dirty     bool
 }
 
 func (s *shell) nextID(prefix string) string {
-	s.sequence++
-	return fmt.Sprintf("%s-%d", prefix, s.sequence)
+	snapshot := s.workspace.Snapshot()
+	for {
+		s.sequence++
+		id := fmt.Sprintf("%s-%d", prefix, s.sequence)
+		if layoutHasID(snapshot.Layout, id) {
+			continue
+		}
+		used := false
+		for _, pane := range snapshot.Panes {
+			for _, tab := range pane.Tabs {
+				if tab.ID == id {
+					used = true
+				}
+			}
+		}
+		if !used {
+			return id
+		}
+	}
+}
+
+func layoutHasID(n core.LayoutNode, id string) bool {
+	if n.ID == id {
+		return true
+	}
+	for _, child := range n.Children {
+		if layoutHasID(child, id) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *shell) save() {
+	if err := core.SaveState(s.statePath, s.workspace, s.theme); err != nil {
+		s.status = "Save failed: " + err.Error()
+		log.Print(s.status)
+		return
+	}
+	s.dirty = false
+	s.status = "Workspace saved"
+}
+
+func (s *shell) setTheme(mode string) {
+	s.theme = mode
+	applyTheme(mode)
+	s.dirty = true
+	s.status = ""
 }
 
 func (s *shell) apply(err error) {
@@ -27,7 +79,9 @@ func (s *shell) apply(err error) {
 	if err != nil {
 		s.status = err.Error()
 		log.Print(err)
+		return
 	}
+	s.dirty = true
 }
 
 func (s *shell) open(sessionID, title string) {
@@ -75,13 +129,21 @@ func (s *shell) moveNext() {
 func (s *shell) view(c *ui.Context) {
 	snapshot := s.workspace.Snapshot()
 	active := snapshot.Panes[snapshot.ActivePane]
-	ui.Column(c).Fill().Padding(16).Gap(12).Children(func() {
+	ui.Themed(c, workspaceTheme(c)).Fill().Padding(spacePage).Gap(spaceSection).Children(func() {
 		ui.Row(c).Gap(12).Children(func() {
-			ui.Text(c, "MyGo Workspace").FontSize(24).Bold()
+			ui.Text(c, "MyGo Workspace").FontSize(fontTitle).Bold()
 			ui.Spacer(c)
 			ui.Text(c, "Local workspace").TextColor(c.Theme().TextMuted)
 		})
-		ui.Row(c).Gap(8).Wrap().Children(func() {
+		ui.Row(c).Gap(spaceControl).Wrap().Children(func() {
+			ui.PrimaryButton(c.Key("save"), "Save workspace").OnClick(s.save)
+			for _, mode := range []string{"system", "light", "dark"} {
+				label := mode
+				if mode == s.theme {
+					label += " (selected)"
+				}
+				ui.Button(c.Key("theme-"+mode), label).OnClick(func() { s.setTheme(mode) })
+			}
 			ui.Button(c.Key("open-home"), "Home").OnClick(func() { s.open("home", "Home") })
 			ui.Button(c.Key("open-runtime"), "Runtime info").OnClick(func() { s.open("runtime", "Runtime info") })
 			ui.Button(c.Key("split-right"), "Split right").OnClick(func() { s.split(core.Horizontal) })
@@ -91,44 +153,50 @@ func (s *shell) view(c *ui.Context) {
 				s.apply(s.workspace.RemovePane(snapshot.ActivePane))
 			})
 		})
-		s.renderNode(c, snapshot, snapshot.Layout, 1)
-		ui.Text(c, fmt.Sprintf("Development build · %d panes", len(snapshot.Panes))).FontSize(12).TextColor(c.Theme().TextMuted)
+		s.renderNode(c, snapshot, snapshot.Layout)
+		saved := "Saved"
+		if s.dirty {
+			saved = "Unsaved changes"
+		}
+		ui.Text(c, fmt.Sprintf("Development build · %d panes · %s", len(snapshot.Panes), saved)).FontSize(fontSmall).TextColor(c.Theme().TextMuted)
 		if s.status != "" {
 			ui.Text(c, s.status)
 		}
 	})
 }
 
-func (s *shell) renderNode(c *ui.Context, snapshot core.WorkspaceSnapshot, n core.LayoutNode, weight float32) {
-	ui.Column(c.Key(n.ID)).Grow(weight).Basis(0).MinWidth(0).MinHeight(0).Gap(4).Children(func() {
+func (s *shell) renderNode(c *ui.Context, snapshot core.WorkspaceSnapshot, n core.LayoutNode) {
+	ui.Column(c.Key(n.ID)).Grow(1).MinWidth(0).MinHeight(0).Children(func() {
 		if len(n.Children) == 0 {
 			s.renderPane(c, snapshot, n.ID)
 			return
 		}
-		ui.Row(c).Gap(4).Children(func() {
-			ui.Text(c, fmt.Sprintf("%s · %.0f%%", n.Direction, n.Ratio*100)).FontSize(12)
-			ui.Button(c.Key("less"), "−").Disabled(n.Ratio <= .2).OnClick(func() {
-				s.apply(s.workspace.Resize(n.ID, max(.2, n.Ratio-.1)))
-			})
-			ui.Button(c.Key("more"), "+").Disabled(n.Ratio >= .8).OnClick(func() {
-				s.apply(s.workspace.Resize(n.ID, min(.8, n.Ratio+.1)))
-			})
-		})
-		children := func() {
-			s.renderNode(c, snapshot, n.Children[0], float32(n.Ratio))
-			s.renderNode(c, snapshot, n.Children[1], float32(1-n.Ratio))
-		}
+		percent := float32(n.Ratio * 100)
+		first := func() { s.renderNode(c, snapshot, n.Children[0]) }
+		second := func() { s.renderNode(c, snapshot, n.Children[1]) }
+		var splitter ui.Element
 		if n.Direction == core.Horizontal {
-			ui.Row(c).Grow(1).MinHeight(0).AlignItems(ui.Stretch).Gap(8).Children(children)
+			splitter = ui.SplitPercent(c, &percent, first, second)
 		} else {
-			ui.Column(c).Grow(1).MinHeight(0).Gap(8).Children(children)
+			splitter = ui.SplitVerticalPercent(c, &percent, first, second)
+		}
+		splitter.Fill().MinWidth(0).MinHeight(0).SplitGap(spaceControl).SplitReset(50)
+		if splitter.Changed() {
+			// A small window can drive the widget to 0 or 100; the domain
+			// always requires a strict interior ratio.
+			s.apply(s.workspace.Resize(n.ID, float64(min(99, max(1, percent)))/100))
 		}
 	})
 }
 
 func (s *shell) renderPane(c *ui.Context, snapshot core.WorkspaceSnapshot, id string) {
 	pane := snapshot.Panes[id]
-	ui.Column(c).Grow(1).MinHeight(0).Padding(8).Gap(8).Children(func() {
+	border := c.Theme().Border
+	if id == snapshot.ActivePane {
+		border = c.Theme().Accent
+	}
+	ui.Column(c).Grow(1).MinHeight(0).MinWidth(0).Padding(spaceControl).Gap(spaceControl).
+		Background(c.Theme().Surface).Border(1, border).Radius(radiusPane).Clip().Children(func() {
 		label := id
 		if id == snapshot.ActivePane {
 			label += " (focused)"
@@ -173,12 +241,29 @@ func (s *shell) renderContent(c *ui.Context, sessionID string) {
 }
 
 func main() {
-	w, err := core.NewWorkspace("pane-root")
+	config, err := os.UserConfigDir()
 	if err != nil {
 		log.Fatal(err)
 	}
-	s := &shell{workspace: w}
-	s.open("home", "Home")
+	dir := filepath.Join(config, "MyGoWorkspace")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		log.Fatal(err)
+	}
+	path := filepath.Join(dir, "state.json")
+	w, theme, err := core.LoadState(path)
+	fresh := errors.Is(err, os.ErrNotExist)
+	if fresh {
+		w, err = core.NewWorkspace("pane-root")
+		theme = "system"
+	}
+	if err != nil {
+		log.Fatalf("Cannot restore workspace %s (original file preserved): %v", path, err)
+	}
+	s := &shell{workspace: w, statePath: path, theme: theme}
+	applyTheme(theme)
+	if fresh {
+		s.open("home", "Home")
+	}
 	mygo.App.WhenReady(func() {
 		mygo.NewWindow(mygo.WindowOptions{
 			Title:   "MyGo Workspace",
