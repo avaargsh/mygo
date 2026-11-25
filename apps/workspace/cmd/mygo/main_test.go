@@ -205,3 +205,20 @@ func TestFilesRootGrantAndRevoke(t *testing.T) {
 		t.Fatal("closed root still accessible")
 	}
 }
+
+func TestFormatSystemBytes(t *testing.T) {
+	cases := []struct {
+		value uint64
+		want  string
+	}{
+		{0, "0 B"},
+		{1023, "1023 B"},
+		{1024, "1.0 KiB"},
+		{1024 * 1024, "1.0 MiB"},
+	}
+	for _, tc := range cases {
+		if got := formatSystemBytes(tc.value); got != tc.want {
+			t.Fatalf("formatSystemBytes(%d) = %q, want %q", tc.value, got, tc.want)
+		}
+	}
+}
