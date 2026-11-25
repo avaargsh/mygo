@@ -20,6 +20,10 @@ func (q *BuildQueue) SubmitApprovedText(ctx context.Context, workspace string, c
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	revision, err := q.manager.captureRevision(workspace)
+	if err != nil {
+		return nil, err
+	}
 	parent, err := resolveDirectory(stagingRoot)
 	if err != nil {
 		return nil, err
@@ -68,7 +72,9 @@ func (q *BuildQueue) SubmitApprovedText(ctx context.Context, workspace string, c
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	return q.submitOwned(workspace, config.Prefix, func(ctx context.Context) error { return q.manager.BuildTextSet(ctx, workspace, config, expected) }, cleanup)
+	return q.submitOwned(workspace, config.Prefix, func(ctx context.Context) error {
+		return q.manager.buildTextSetAt(ctx, workspace, config.Prefix, expected, config.Run, revision)
+	}, cleanup)
 }
 
 // CleanupError reports a terminal stage removal failure separately from the
