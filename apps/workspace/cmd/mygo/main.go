@@ -164,6 +164,7 @@ func (s *shell) view(c *ui.Context) {
 			s.commandButton(c, "open-terminal", "content.terminal", "Terminal")
 			s.commandButton(c, "open-files", "content.files", "Files")
 			s.commandButton(c, "open-chat", "content.chat", "Chat")
+			s.commandButton(c, "new-chat", "content.new-chat", "New chat")
 			s.commandButton(c, "split-right", "layout.split-right", "Split right")
 			s.commandButton(c, "split-down", "layout.split-down", "Split down")
 			s.commandButton(c, "move-next", "layout.move-next", "Move tab to next pane")
@@ -272,7 +273,7 @@ func (s *shell) renderContent(c *ui.Context, snapshot core.WorkspaceSnapshot, pa
 		ui.Button(c.Key("retry-content"), "Retry content").OnClick(func() { s.retryContent(sessionID) })
 		return
 	}
-	switch session.ID {
+	switch session.ProviderID {
 	case "home":
 		ui.Text(c, "Your Personal AI Workspace").FontSize(24).Bold()
 		ui.Text(c, "Open Runtime info to inspect this running application.")
@@ -355,7 +356,7 @@ func main() {
 	s := &shell{workspace: w, content: content, statePath: path, theme: theme}
 	for _, pane := range w.Snapshot().Panes {
 		for _, tab := range pane.Tabs {
-			if _, err := content.Open(tab.SessionID); err != nil {
+			if _, err := restoreContentSession(content, tab.SessionID); err != nil {
 				s.status = "Restore content failed: " + err.Error()
 				log.Print(s.status)
 			}
@@ -385,10 +386,7 @@ func main() {
 			}
 		})
 		s.window.OnClosed(func() {
-			if ch := s.chatSession(); ch != nil {
-				ch.chat.Cancel()
-				ch.apiKey = ""
-			}
+			s.closeChats()
 			if session := s.content.Session("browser"); session != nil {
 				if browser, ok := session.Value.(*browserSession); ok && browser != nil {
 					s.releaseBrowser(browser)
