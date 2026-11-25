@@ -188,7 +188,7 @@ func (s *shell) view(c *ui.Context) {
 			}
 		}
 		if t := s.terminalSession(); t != nil && core.SessionOwner(snapshot, "terminal") == "" {
-			if t.Resource() != nil {
+			if t.CanStop() {
 				ui.Button(c.Key("close-hidden-terminal"), "Close hidden terminal").OnClick(func() { s.stopTerminal(t) })
 			}
 			if t.State() == core.TerminalStopping {

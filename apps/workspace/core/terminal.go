@@ -21,8 +21,9 @@ const (
 
 // TerminalSession is owned by the UI thread; a tab never owns the process.
 type TerminalSession struct {
-	resource TerminalResource
-	closing  bool
+	resource    TerminalResource
+	closing     bool
+	closeFailed bool
 }
 
 func (s *TerminalSession) State() TerminalState {
@@ -75,13 +76,22 @@ func (s *TerminalSession) Start(factory func() (TerminalResource, error)) error 
 	}
 	s.resource = r
 	s.closing = false
+	s.closeFailed = false
 	return nil
 }
 
+// CanStop reports whether a teardown can be requested or retried. A failed
+// Close may already have released view resources; never expose them again.
+func (s *TerminalSession) CanStop() bool {
+	return s.resource != nil && (!s.closing || s.closeFailed)
+}
+
 func (s *TerminalSession) Stop() error {
-	if s.resource == nil || s.closing {
+	if !s.CanStop() {
 		return nil
 	}
 	s.closing = true
-	return s.resource.Close()
+	err := s.resource.Close()
+	s.closeFailed = err != nil
+	return err
 }
