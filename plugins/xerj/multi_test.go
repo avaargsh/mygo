@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -76,5 +77,65 @@ func TestMultiManifestRestart(t *testing.T) {
 	}
 	if _, err = m.Search(context.Background(), "a", "needle", 1); !errors.Is(err, ErrIndexNotReady) {
 		t.Fatalf("search %v", err)
+	}
+}
+
+func TestLegacyManifestMigration(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "manifest.json")
+	endpoint := "http://127.0.0.1:9200"
+	old := `{"version":1,"endpoint":"http://127.0.0.1:9200","reserved":["old-code"],"bindings":[{"workspace":"a","index":"old-code","generation":7,"state":"READY"}]}`
+	if err := os.WriteFile(path, []byte(old), 0600); err != nil {
+		t.Fatal(err)
+	}
+	m, err := OpenPersistentManager(endpoint, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := m.Status("a"); got.State != IndexFailed || got.Generation != 7 {
+		t.Fatalf("status %+v", got)
+	}
+	if _, err := m.BeginSet("a", []string{"old-code", "new-notes"}); err == nil {
+		t.Fatal("legacy reservation lost")
+	}
+	if _, err := m.BeginSet("a", []string{"new-code", "new-notes"}); err != nil {
+		t.Fatal(err)
+	}
+	m, err = OpenPersistentManager(endpoint, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := m.Status("a"); got.State != IndexFailed || got.Generation != 8 {
+		t.Fatalf("status %+v", got)
+	}
+}
+
+func TestMultiSearchDiscardsSupersededSet(t *testing.T) {
+	entered, release := make(chan struct{}), make(chan struct{})
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/demo-notes/_search" {
+			close(entered)
+			<-release
+		}
+		fmt.Fprint(w, `{"hits":{"hits":[]}}`)
+	}))
+	defer s.Close()
+	m := NewManager(s.URL)
+	ticket, err := m.BeginSet("a", []string{"demo-code", "demo-notes"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Publish(ticket); err != nil {
+		t.Fatal(err)
+	}
+	result := make(chan error, 1)
+	go func() { _, err := m.Search(context.Background(), "a", "needle", 1); result <- err }()
+	<-entered
+	_, err = m.BeginSet("a", []string{"next-code", "next-notes"})
+	close(release)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := <-result; !errors.Is(err, ErrStaleGeneration) {
+		t.Fatalf("stale: %v", err)
 	}
 }
