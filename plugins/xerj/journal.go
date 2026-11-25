@@ -170,6 +170,7 @@ func (q *BuildQueue) recordLocked(j *BuildJob, state BuildState) error {
 	if err := q.persistJournalLocked(); err != nil {
 		q.records = old
 		q.journalFault = true
+		q.signalLocked()
 		failure := fmt.Errorf("%w: %v", ErrBuildJournalUnavailable, err)
 		for _, p := range q.pending {
 			p.finishLocked(BuildInterrupted, failure)
