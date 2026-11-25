@@ -224,3 +224,18 @@ From the MyGo checkout at the candidate commit, with its pinned Go toolchain:
 Replace all example values before running. Use the actual disposable node port. The test creates two random fresh prefixes, prints them and the digest, and leaves the engine indices for inspection. Stop and dispose of the dedicated node/data after collecting evidence; it does not install software, launch a server, delete engine indices or use any real workspace data. Missing required configuration fails the opted-in test rather than skipping. Ordinary package tests skip it unless explicitly enabled.
 
 Record candidate Git SHA, Go version, XERJ version and trusted SHA-256, OS/architecture, expected fixture slug, exact generated prefixes, exit code and complete test output. A failure at catalog, content verification, passage retrieval or post-cleanup retrieval is a compatibility blocker, not permission to bypass verification. TestInstalledFlowFixture runs the same lifecycle against a POSIX test executable and simulated HTTP server; this proves the acceptance harness, not upstream behavior. Real-engine acceptance, automatic watcher-to-worker installed integration, UI and full repository CI are separate gates.
+
+## Workspace search presentation service
+
+NewWorkspaceSearchService(manager, trustedWorkspaceID) creates an opt-in, workspace-bound read-only presentation service. A nil manager explicitly disables it. The application must authorize the workspace before creating the service and must not let a frontend or model select an arbitrary workspace, index or engine endpoint. This adds no core dependency or IPC registration.
+
+Run service.Search(ctx, query, limit) off the UI thread. The request accepts only a nonblank query (at most 4096 bytes) and a limit of 1–20. The returned WorkspaceSearchResult has a stable state and a non-null hits array: MATCHES, EMPTY, DISABLED, INVALID_REQUEST, NOT_READY, STALE, UNAVAILABLE, CANCELED or TIMEOUT. Only successful retrieval can be EMPTY or MATCHES. No raw engine errors or partial hits are returned. This intentionally trades detailed error diagnosis for a simple presentation contract; logging/diagnostics remain an application integration concern.
+
+The service does not perform authorization, start the engine, own the worker or manage UI request ordering. Cancel superseded UI requests and discard late replies before displaying them, even if retrieval succeeded at its linearization point. Discard the service when the workspace changes and revalidate authorization and source identity before opening a result. Treat hit path, line, index and text as untrusted display data; never use them directly as unrestricted file-open or execution instructions.
+
+    service, err := xerj.NewWorkspaceSearchService(manager, approvedWorkspaceID)
+    // Handle err before invoking on a worker goroutine.
+    reply := service.Search(ctx, query, 5)
+    // Present reply.State; render reply.Hits as plain text.
+
+TestWorkspaceSearchStates, TestWorkspaceSearchDisabledAndInvalid and TestWorkspaceSearchDropsCanceledReply cover presentation behavior using a local interface double. TestWorkspaceSearchServiceManager is a repository integration test with the real Manager and an HTTP fixture. Native search panel, typed IPC, service lifecycle wiring and installed XERJ acceptance are separate gates.
