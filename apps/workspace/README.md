@@ -280,3 +280,24 @@ The existing isolated core directory also passed regression tests, but it
 does not contain every latest remote file. Native palette tests and complete
 Go 1.27.3+ desktop build are not yet run. The Browser input uses the explicit Go
 button rather than relying on an unverified submit callback API.
+
+## Model transport (M3 first slice)
+
+The standard-library-only model adapter implements explicit text-only
+OpenAI-compatible Chat Completions calls, using the full endpoint URL and
+model name selected by the caller. It does not connect on construction,
+automatically attach workspace contents, execute tools, or store credentials.
+API keys are passed per call. HTTPS is required except literal loopback HTTP;
+redirects and environment proxies are disabled. Requests and responses are
+bounded (1 MiB and 2 MiB respectively), requests have a 60-second timeout,
+and caller context cancellation is supported. Remote error bodies and raw
+transport errors are not exposed. Model replies containing tool calls or
+legacy function calls are rejected. Returned text is untrusted content, not
+an instruction to execute.
+
+This is a non-streaming transport only; it has not been wired into a Chat
+Tab or keychain. No live external model or private gateway was contacted.
+The six adapter tests ran against local httptest servers with Go 1.23.2,
+including a RED-to-GREEN regression for legacy function replies. Race and
+vet passed. The two remote blobs match the exact locally tested files.
+Full repository/native UI and Go 1.27.4 cloud verification remain pending.
