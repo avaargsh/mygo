@@ -48,7 +48,7 @@ untrusted page options; it does not establish browser storage isolation.
 - cmd/mygo is the native UI composition root. Only the UI thread mutates
   the workspace. The workspace owns the layout and panes; layout leaves and
   pane identities must match. Tab IDs are unique across the workspace. Background services must later marshal commands to that owner.
-- The content manager registers Home, Runtime info and Notes as built-in
+- The content manager registers Home, Runtime info, Notes and Browser as built-in
   singleton sessions. Closing a tab leaves the session alive until process
   exit; multiple views share one session. Unknown providers are rejected and
   failed opens can be retried. Multiple instances and resourceful session
@@ -115,3 +115,41 @@ failed compilation before the implementation. The two new core file
 blob hashes match the locally tested files. Native shell integration and
 its tests were committed but have not been compiled or executed locally.
 The root build still needs Go 1.27.3+ and a reachable dependency source.
+
+## Browser (M2 second slice)
+
+Open Browser from the toolbar. Enter an explicit HTTP or HTTPS address and
+choose Go (or submit the address field). A native WebView is created only
+on a successful explicit navigation request; restored tabs do not start
+network requests. Back, Forward, Reload and Use current URL are available.
+The address field is an editable request address, not a continuously
+synchronized navigation indicator.
+
+The singleton browser session keeps its native resource when tab views
+close or move. Only one visible pane mounts the WebView; another view can
+take ownership using Show browser here. Close browser page releases the
+native resource; when no browser tab is visible, Close hidden browser page
+provides the same action. The next Go creates a new view. Browser addresses,
+history and page state are not persisted by the workspace.
+
+All browser pages are untrusted, with no application service bindings.
+The app rejects non-HTTP(S) navigation requests and retains the framework's
+default denial of permissions, downloads and popups for untrusted pages.
+This is not a network sandbox, an incognito browser, or a guarantee of
+cookie isolation. URL validation does not restrict subresources or private
+network access. Actual platform behavior must be verified.
+
+Manual desktop acceptance: launch Workspace, open Browser, navigate to a
+user-chosen test page, exercise back/forward/reload and current URL, split
+the window and open Browser in both panes. Verify only one WebView is
+mounted, move focus and confirm retained state, close the visible tab and
+reopen it, then release the hidden resource. Save layout, restart and
+confirm no page is loaded automatically. Verify a file URL is rejected and
+permission/download/popup behavior is denied. No desktop pass is claimed.
+
+Local evidence: 24 isolated core tests passed (3 new tests RED to GREEN),
+race detection and vet passed, using Go 1.23.2 with GO111MODULE=off. The
+two browser core files match the remotely committed Git blob hashes.
+Native integration and headless shell acceptance test are unexecuted
+because GitHub DNS and the required full Go 1.27.3+ toolchain remain
+unavailable locally.
