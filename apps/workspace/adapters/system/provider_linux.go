@@ -160,6 +160,7 @@ func readMemory(name string) (uint64, uint64, error) {
 	}
 	defer f.Close()
 	var total, available uint64
+	var haveTotal, haveAvailable bool
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		fields := strings.Fields(scanner.Text())
@@ -176,15 +177,15 @@ func readMemory(name string) (uint64, uint64, error) {
 		}
 		switch strings.TrimSuffix(fields[0], ":") {
 		case "MemTotal":
-			total = bytes
+			total, haveTotal = bytes, true
 		case "MemAvailable":
-			available = bytes
+			available, haveAvailable = bytes, true
 		}
 	}
 	if err := scanner.Err(); err != nil {
 		return 0, 0, err
 	}
-	if total == 0 || available > total {
+	if !haveTotal || !haveAvailable || total == 0 || available > total {
 		return 0, 0, errors.New("MemTotal or MemAvailable unavailable")
 	}
 	return total, available, nil
