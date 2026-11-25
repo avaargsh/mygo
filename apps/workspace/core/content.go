@@ -10,18 +10,20 @@ import (
 	"unicode/utf8"
 )
 
-// ContentProvider describes one built-in session. Multiple instances and
-// external providers are deferred until their lifecycle contracts are needed.
+// ContentProvider describes a default session and an optional factory for
+// independent, explicitly opened instances. Factories own resource creation.
 type ContentProvider struct {
-	ID    string
-	Title string
-	Open  func() (any, error)
+	ID          string
+	Title       string
+	Open        func() (any, error)
+	NewInstance func(sessionID string) (any, error)
 }
 
 type ContentSession struct {
-	ID    string
-	Title string
-	Value any
+	ID         string
+	ProviderID string
+	Title      string
+	Value      any
 }
 
 // ContentManager owns sessions independently of tab views. Calls are serialized
@@ -42,6 +44,9 @@ func (m *ContentManager) Register(p ContentProvider) error {
 	if _, exists := m.providers[p.ID]; exists {
 		return errors.New("duplicate content provider")
 	}
+	if m.sessions[p.ID] != nil {
+		return errors.New("provider ID conflicts with existing session")
+	}
 	m.providers[p.ID] = p
 	return nil
 }
@@ -58,9 +63,50 @@ func (m *ContentManager) Open(id string) (*ContentSession, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &ContentSession{ID: p.ID, Title: p.Title, Value: value}
+	s := &ContentSession{ID: p.ID, ProviderID: p.ID, Title: p.Title, Value: value}
 	m.sessions[id] = s
 	return s, nil
+}
+
+// OpenInstance explicitly creates or reuses an independent session of an
+// opted-in provider. Instance IDs are globally unique within the manager.
+// Open only resolves an existing instance; it does not reconstruct one.
+func (m *ContentManager) OpenInstance(providerID, sessionID string) (*ContentSession, error) {
+	p, ok := m.providers[providerID]
+	if !ok || p.NewInstance == nil {
+		return nil, errors.New("provider does not support instances")
+	}
+	if !validInstanceID(sessionID) {
+		return nil, errors.New("invalid instance ID")
+	}
+	if _, reserved := m.providers[sessionID]; reserved {
+		return nil, errors.New("instance ID conflicts with provider")
+	}
+	if s := m.sessions[sessionID]; s != nil {
+		if s.ProviderID != providerID {
+			return nil, errors.New("instance belongs to another provider")
+		}
+		return s, nil
+	}
+	value, err := p.NewInstance(sessionID)
+	if err != nil {
+		return nil, err
+	}
+	s := &ContentSession{ID: sessionID, ProviderID: providerID, Title: p.Title, Value: value}
+	m.sessions[sessionID] = s
+	return s, nil
+}
+
+func validInstanceID(id string) bool {
+	if len(id) == 0 || len(id) > 128 {
+		return false
+	}
+	for _, c := range id {
+		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-' || c == '_') {
+			return false
+		}
+	}
+	return true
 }
 
 func (m *ContentManager) Session(id string) *ContentSession { return m.sessions[id] }

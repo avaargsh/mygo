@@ -123,3 +123,19 @@ func LoadChatArchive(path string) (*ChatSession, string, string, error) {
 	}
 	return &ChatSession{turns: a.Turns}, a.Endpoint, a.Model, nil
 }
+
+// RestoreArchive loads a validated archive into an empty, idle session.
+// It leaves an existing conversation unchanged on every error.
+func (s *ChatSession) RestoreArchive(path string) (string, string, error) {
+	restored, endpoint, modelName, err := LoadChatArchive(path)
+	if err != nil {
+		return "", "", err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.cancel != nil || len(s.turns) != 0 {
+		return "", "", errors.New("restore requires an empty idle chat")
+	}
+	s.turns = restored.turns
+	return endpoint, modelName, nil
+}
