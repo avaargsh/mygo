@@ -6,6 +6,7 @@
   "out": "dist",
   "linux": {
     "webview": true,
+    "copyrightFile": "copyright",
     "comment": "Local-first personal AI workspace",
     "categories": [
       "Utility",
