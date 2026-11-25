@@ -20,10 +20,6 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-type Provider interface {
-	Snapshot(context.Context) (core.SystemSnapshot, error)
-}
-
 type LinuxProvider struct {
 	mu         sync.Mutex
 	procRoot   string
