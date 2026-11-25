@@ -12,6 +12,7 @@ func builtInContent(dir string) (*core.ContentManager, error) {
 	for _, provider := range []core.ContentProvider{
 		{ID: "home", Title: "Home", Open: func() (any, error) { return nil, nil }},
 		{ID: "runtime", Title: "Runtime info", Open: func() (any, error) { return nil, nil }},
+		{ID: "browser", Title: "Browser", Open: func() (any, error) { return &browserSession{}, nil }},
 		{ID: "notes", Title: "Notes", Open: func() (any, error) {
 			return core.OpenNote(filepath.Join(dir, "notes.md"))
 		}},
