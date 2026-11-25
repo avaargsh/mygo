@@ -14,6 +14,7 @@ import (
 // chatViewSession owns UI drafts; only model.ChatSession crosses threads.
 // Connection details and credentials are never included in workspace storage.
 type chatViewSession struct {
+	sessionID string
 	chat          model.ChatSession
 	endpoint      string
 	modelName     string
@@ -66,7 +67,7 @@ func (s *shell) clearChat(ch *chatViewSession) {
 }
 
 func (s *shell) renderChat(c *ui.Context, snapshot core.WorkspaceSnapshot, paneID string, ch *chatViewSession) {
-	if core.SessionOwner(snapshot, "chat") != paneID {
+	if core.SessionOwner(snapshot, chatIdentity(ch)) != paneID {
 		ui.Text(c, "Chat is displayed in another pane.")
 		ui.Button(c, "Show chat here").OnClick(func() { s.apply(s.workspace.Focus(paneID)) })
 		return
@@ -119,13 +120,5 @@ func (s *shell) renderChat(c *ui.Context, snapshot core.WorkspaceSnapshot, paneI
 // Poll only while the worker is active. The UI owns its drafts and never
 // receives synchronous UI calls from the network worker.
 func (s *shell) renderChatActivity(c *ui.Context, snapshot core.WorkspaceSnapshot) {
-	ch := s.chatSession()
-	if ch == nil || !ch.chat.Snapshot().Active {
-		return
-	}
-	if core.SessionOwner(snapshot, "chat") == "" {
-		c.After(100 * time.Millisecond)
-		ui.Text(c, "Chat generating in a hidden tab").FontSize(fontSmall)
-		ui.Button(c, "Stop hidden generation").OnClick(func() { ch.chat.Cancel() })
-	}
+	s.renderHiddenChats(c, snapshot)
 }
