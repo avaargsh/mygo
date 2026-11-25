@@ -316,3 +316,53 @@ func TestFilesViewRejectsBinaryPreview(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestCommandPaletteOpensNotesThroughSharedDispatch(t *testing.T) {
+	w, err := core.NewWorkspace("root")
+	if err != nil {
+		t.Fatal(err)
+	}
+	content, err := builtInContent(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &shell{workspace: w, content: content, theme: "system"}
+	s.open("home")
+	tt := ui.NewTester(s.view, 1400, 900)
+	if err := tt.Click("Commands"); err != nil {
+		t.Fatal(err)
+	}
+	if !s.paletteOpen {
+		t.Fatal("command palette did not open")
+	}
+	// Select a unique search result without depending on scrolling order.
+	s.paletteQuery = "markdown"
+	tt = ui.NewTester(s.view, 1400, 900)
+	if err := tt.Click("Run: Open Notes"); err != nil {
+		t.Fatal(err)
+	}
+	if s.paletteOpen || s.paletteQuery != "" {
+		t.Fatal("command palette did not close and clear search")
+	}
+	snap := w.Snapshot()
+	pane := snap.Panes[snap.ActivePane]
+	for _, tab := range pane.Tabs {
+		if tab.ID == pane.ActiveTab && tab.SessionID == "notes" {
+			return
+		}
+	}
+	t.Fatal("Notes command did not activate a notes tab")
+}
+
+func TestWorkspaceCommandRejectsDisabledLayoutOperation(t *testing.T) {
+	w, err := core.NewWorkspace("root")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &shell{workspace: w}
+	before := w.Snapshot()
+	s.runCommand("layout.remove-pane")
+	if s.status == "" || !reflect.DeepEqual(before, w.Snapshot()) || s.dirty {
+		t.Fatal("disabled command changed the workspace")
+	}
+}
