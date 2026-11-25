@@ -32,7 +32,7 @@ Check results against the original files. Path and line are unverified search me
 - Read-only lexical search with `_passage` projection (no whole document request), exact hit index check, incomplete-result rejection, bounded results, five-second deadline, no redirects or proxy; no memory writes, indexing, external reranking or arbitrary tool execution.
 - Index only explicitly approved directories; exclude secrets, credentials, personal files and generated state.
 - Retrieved text is untrusted. Opening a source requires workspace authorization and current-file validation.
-- Before general availability: verify against a pinned real XERJ release, add durable index lifecycle, actual builder integration and per-workspace access enforcement, stale-source detection, typed IPC, UI and a disabled/unavailable state. Test desktop packaging separately.
+- Before general availability: verify against a pinned real XERJ release, add actual builder integration, restart reconciliation beyond conservative rebuild, cross-platform persistence validation and per-workspace access enforcement, stale-source detection, typed IPC, UI and a disabled/unavailable state. Test desktop packaging separately.
 
 ## Tests
 
@@ -72,4 +72,14 @@ A single application-owned Manager per local node coordinates trusted workspace 
 
 Begin invalidates the previous ready binding immediately. Status distinguishes UNBOUND, BUILDING, READY and FAILED; Fail records a failed build, and retries require a new generation. Stale completion tickets and results from a superseded in-flight query are rejected. There is no fallback to older indices. This chooses availability loss during rebuild over serving outdated results.
 
-Do not expose Manager lifecycle methods, raw workspace IDs or index selection to untrusted frontends or agents. The caller must authorize workspace identity, enforce the approved corpus, and revalidate source identity before opening results. Reservation is process-local; persistence, restart reconciliation, actual build/cleanup operations, engine-side authorization, and source freshness are not implemented. READY means the trusted caller published a binding, not that the node is currently healthy. Incremental in-place updates are intentionally deferred until a consistent generation protocol is verified.
+Do not expose Manager lifecycle methods, raw workspace IDs or index selection to untrusted frontends or agents. The caller must authorize workspace identity, enforce the approved corpus, and revalidate source identity before opening results. For NewManager reservation is process-local; the persistent variant below retains reservations across reopening. Actual build/cleanup operations, engine-side authorization, and source freshness are not implemented. READY means the trusted caller published a binding, not that the node is currently healthy. Incremental in-place updates are intentionally deferred until a consistent generation protocol is verified.
+
+## Optional persistent index manifest
+
+CreatePersistentManager(endpoint, absolutePath) initializes a versioned JSON manifest exclusively and refuses to replace an existing file. OpenPersistentManager(endpoint, absolutePath) requires an existing valid manifest and the same configured endpoint. Use a private application state directory outside all indexed trees, with exclusive ownership of the node and manifest enforced by the application; this module does not implement interprocess locking. Do not silently create a replacement after an open failure.
+
+Begin, Publish and Fail persist generation, state and historical exact index reservations before reporting success. The file is bounded to 4 MiB. An update writes and syncs a temporary file and replaces the manifest in the same directory. A write failure disables further searches and transitions on that Manager; stop it and inspect persisted state before reopening. This is not a power-loss guarantee: directory durability, Windows replacement behavior and multi-process exclusion are not independently established.
+
+Reopening deliberately marks previously known workspaces FAILED, including READY and BUILDING entries. Generation counters and all historical reservations survive, but a fresh verified generation is required before search resumes. Old index names remain unavailable for reuse. The endpoint string is configuration, not a verified node identity. This conservative restart behavior is intentional until corpus identity, worker reconciliation and engine freshness can be verified. No automatic build, cleanup or index reuse is introduced.
+
+Run the additional manifest tests with the package race suite. The tests use real temporary filesystem paths and simulate a failed update by moving the state directory. They do not establish live XERJ behavior or power-loss durability.
