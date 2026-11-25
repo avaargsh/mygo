@@ -33,25 +33,64 @@ launcher="$HOME/.local/bin/mygo-workspace"
 test -x "$launcher"
 test -s "$HOME/.local/mygo-workspace.app/libghostty-vt.so"
 test -s "$XDG_DATA_HOME/applications/mygo-workspace.desktop"
-"$launcher" >"$work/app.log" 2>&1 &
-pid=$!
-# A visible window, not merely a living process, is required for startup.
-for ((i=0; i<100; i++)); do
-  if ! kill -0 "$pid" 2>/dev/null; then
-    echo 'Installed process exited before startup' >&2
-    exit 1
-  fi
-  if xdotool search --onlyvisible --name '^MyGo Workspace$' >/dev/null 2>&1; then
-    break
-  fi
-  sleep 0.2
-done
-xdotool search --onlyvisible --name '^MyGo Workspace$' >/dev/null
-test -d "$XDG_CONFIG_HOME/MyGoWorkspace"
-# This is a startup probe, not a graceful-quit or persistence test.
-kill "$pid"
-wait "$pid" 2>/dev/null || true
-pid=''
+start_app() {
+  "$launcher" >>"$work/app.log" 2>&1 &
+  pid=$!
+  for ((i=0; i<100; i++)); do
+    kill -0 "$pid" || return 1
+    if wid=$(xdotool search --onlyvisible --name '^MyGo Workspace$' | head -n 1) && [[ -n "$wid" ]]; then
+      timeout 5s xdotool windowfocus --sync "$wid"
+      return
+    fi
+    sleep 0.2
+  done
+  return 1
+}
+close_app() {
+  xdotool key --clearmodifiers ctrl+w
+  for ((i=0; i<100; i++)); do
+    if ! kill -0 "$pid" 2>/dev/null; then
+      wait "$pid"
+      pid=''
+      return
+    fi
+    sleep 0.2
+  done
+  echo 'Workspace did not close normally' >&2
+  return 1
+}
+wait_for_state() {
+  for ((i=0; i<100; i++)); do
+    [[ ! -s "$state" ]] || return 0
+    sleep 0.2
+  done
+  return 1
+}
+state="$XDG_CONFIG_HOME/MyGoWorkspace/state.json"
+start_app
+xdotool key --clearmodifiers ctrl+shift+e
+xdotool key --clearmodifiers ctrl+s
+wait_for_state
+python3 - "$state" <<'PY'
+import json, sys
+with open(sys.argv[1]) as f:
+    s = json.load(f)
+w = s["workspace"]
+assert s["version"] == 1 and len(w["panes"]) == 2, s
+assert w["layout"]["direction"] == "horizontal", s
+assert len(w["layout"]["children"]) == 2, s
+assert w["activePane"] in w["panes"], s
+PY
+cp "$state" "$work/expected.json"
+close_app
+start_app
+# Prove a save recreated the state from the restored in-memory layout.
+rm -- "$state"
+xdotool key --clearmodifiers ctrl+s
+wait_for_state
+cmp "$work/expected.json" "$state"
+close_app
+echo 'PASS: installed save, graceful close, restart and restored layout'
 printf 'retained data\n' > "$XDG_CONFIG_HOME/MyGoWorkspace/acceptance-marker"
 sh ./install.sh --uninstall
 test ! -e "$launcher"
