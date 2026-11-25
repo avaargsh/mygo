@@ -22,13 +22,19 @@ func TestAutoindexCLI(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// The production adapter resolves symlinks before invoking the engine.
+	// On macOS, TempDir may use /var while the physical path uses /private/var.
+	canonicalCorpus, err := filepath.EvalSymlinks(corpus)
+	if err != nil {
+		t.Fatal(err)
+	}
 	binary := filepath.Join(root, "xerj-fixture")
 	// The fixture validates argv and the opt-out environment without contacting a node.
 	for _, code := range []int{0, 3, 4} {
 		script := fmt.Sprintf(`#!/bin/sh
-[ "$#" = 14 ] && [ "$1" = autoindex ] && [ "$2" = %q ] && [ "$3" = --url ] && [ "$4" = http://127.0.0.1:9200 ] && [ "$5" = --prefix ] && [ "$6" = mygoabc ] && [ "$7" = --state-dir ] && [ "$8" = "$PWD" ] && [ "$9" = --workers ] && [ "${10}" = 1 ] && [ "${11}" = --no-semantic ] && [ "${12}" = --progress ] && [ "${13}" = none ] && [ "${14}" = --disable-feedback ] && [ "$XERJ_DISABLE_FEEDBACK" = true ] || exit 99
+[ "$#" = 14 ] && [ "$1" = autoindex ] && [ "$2" = %q ] && [ "$3" = --url ] && [ "$4" = http://127.0.0.1:9200 ] && [ "$5" = --prefix ] && [ "$6" = mygoabc ] && [ "$7" = --state-dir ] && [ "$8" = "$(pwd -P)" ] && [ "$9" = --workers ] && [ "${10}" = 1 ] && [ "${11}" = --no-semantic ] && [ "${12}" = --progress ] && [ "${13}" = none ] && [ "${14}" = --disable-feedback ] && [ "$XERJ_DISABLE_FEEDBACK" = true ] || exit 99
 exit %d
-`, corpus, code)
+`, canonicalCorpus, code)
 		if err := os.WriteFile(binary, []byte(script), 0700); err != nil {
 			t.Fatal(err)
 		}

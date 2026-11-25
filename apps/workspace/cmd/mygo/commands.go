@@ -32,6 +32,7 @@ func (s *shell) commandRegistry() *core.CommandRegistry {
 	} {
 		register(core.Command{ID: "content." + item.id, Title: "Open " + item.title, Keywords: item.keywords, Run: func() { s.open(item.id) }})
 	}
+	register(core.Command{ID: "content.new-chat", Title: "New chat", Keywords: "conversation 新对话", Run: s.newChat})
 	register(core.Command{ID: "layout.split-right", Title: "Split right", Keywords: "horizontal pane 分屏", Run: func() { s.split(core.Horizontal) }})
 	register(core.Command{ID: "layout.split-down", Title: "Split down", Keywords: "vertical pane 分屏", Run: func() { s.split(core.Vertical) }})
 	register(core.Command{ID: "layout.move-next", Title: "Move tab to next pane", Keywords: "移动 标签", Enabled: func() bool {
