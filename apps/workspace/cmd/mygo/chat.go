@@ -103,6 +103,7 @@ func (s *shell) renderChat(c *ui.Context, snapshot core.WorkspaceSnapshot, paneI
 		})
 	})
 	if state.Active {
+		c.After(100 * time.Millisecond)
 		ui.Text(c, "Generation active")
 		ui.Button(c, "Stop generation").OnClick(func() { ch.chat.Cancel() })
 		return
@@ -122,8 +123,8 @@ func (s *shell) renderChatActivity(c *ui.Context, snapshot core.WorkspaceSnapsho
 	if ch == nil || !ch.chat.Snapshot().Active {
 		return
 	}
-	c.After(100 * time.Millisecond)
 	if core.SessionOwner(snapshot, "chat") == "" {
+		c.After(100 * time.Millisecond)
 		ui.Text(c, "Chat generating in a hidden tab").FontSize(fontSmall)
 		ui.Button(c, "Stop hidden generation").OnClick(func() { ch.chat.Cancel() })
 	}
