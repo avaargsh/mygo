@@ -98,3 +98,58 @@ func TestTerminalFailedStartAndClose(t *testing.T) {
 		t.Fatal("exit not observed")
 	}
 }
+
+func TestTerminalCloseFailureCanRetry(t *testing.T) {
+	var s TerminalSession
+	f := &fakeTerminal{done: make(chan struct{}), closeErr: errors.New("temporary close failure")}
+	if err := s.Start(func() (TerminalResource, error) { return f, nil }); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Stop(); err == nil {
+		t.Fatal("expected injected close failure")
+	}
+	if s.Resource() != nil || s.State() != TerminalStopping {
+		t.Fatal("failed teardown exposed resource or allowed restart")
+	}
+	if err := s.Stop(); err == nil || f.closes != 2 {
+		t.Fatal("failed close must remain retryable")
+	}
+	f.closeErr = nil
+	if err := s.Stop(); err != nil || f.closes != 3 {
+		t.Fatal("close retry did not reach resource")
+	}
+	if err := s.Stop(); err != nil || f.closes != 3 {
+		t.Fatal("accepted close must not be repeated")
+	}
+	if s.State() != TerminalStopping {
+		t.Fatal("successful request is not exit evidence")
+	}
+	close(f.done)
+	if s.State() != TerminalExited {
+		t.Fatal("exit not observed")
+	}
+}
+
+func TestTerminalExitedAfterCloseFailureRetriesCleanupBeforeRestart(t *testing.T) {
+	var s TerminalSession
+	f := &fakeTerminal{done: make(chan struct{}), closeErr: errors.New("cleanup failed")}
+	if err := s.Start(func() (TerminalResource, error) { return f, nil }); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Stop(); err == nil {
+		t.Fatal("expected cleanup failure")
+	}
+	close(f.done)
+	calls := 0
+	start := func() (TerminalResource, error) {
+		calls++
+		return &fakeTerminal{done: make(chan struct{})}, nil
+	}
+	if err := s.Start(start); err == nil || calls != 0 {
+		t.Fatal("replacement started before cleanup retry succeeded")
+	}
+	f.closeErr = nil
+	if err := s.Start(start); err != nil || calls != 1 {
+		t.Fatal("replacement blocked after successful retry")
+	}
+}

@@ -88,3 +88,66 @@ func TestStoreWriteFailure(t *testing.T) {
 		t.Fatalf("temporary file leaked: %v %v", entries, err)
 	}
 }
+
+func TestStoreSyncsParentAfterReplacement(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "state.json")
+	w, _ := NewWorkspace("root")
+	if err := SaveState(path, w, "system"); err != nil {
+		t.Fatal(err)
+	}
+	synced := false
+	err := saveState(path, w, "dark", os.Rename, func(gotDir string) error {
+		if gotDir != dir {
+			t.Fatalf("wrong directory: %q", gotDir)
+		}
+		_, theme, err := LoadState(path)
+		if err != nil || theme != "dark" {
+			t.Fatalf("directory sync preceded replacement: %v %s", err, theme)
+		}
+		synced = true
+		return nil
+	})
+	if err != nil || !synced {
+		t.Fatalf("directory sync not completed: %v", err)
+	}
+}
+
+func TestStoreReplacementFailurePreservesPrevious(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "state.json")
+	w, _ := NewWorkspace("root")
+	if err := SaveState(path, w, "system"); err != nil {
+		t.Fatal(err)
+	}
+	injected := errors.New("replace failed")
+	err := saveState(path, w, "dark", func(_, _ string) error { return injected }, func(string) error {
+		t.Fatal("directory sync after failed replacement")
+		return nil
+	})
+	if !errors.Is(err, injected) {
+		t.Fatalf("replacement error lost: %v", err)
+	}
+	_, theme, err := LoadState(path)
+	if err != nil || theme != "system" {
+		t.Fatalf("previous state not preserved: %v %s", err, theme)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("temporary file leaked: %v %v", entries, err)
+	}
+}
+
+func TestStoreDirectorySyncFailureIsReportedAfterReplacement(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	w, _ := NewWorkspace("root")
+	injected := errors.New("directory sync failed")
+	err := saveState(path, w, "dark", os.Rename, func(string) error { return injected })
+	if !errors.Is(err, injected) {
+		t.Fatalf("sync error lost: %v", err)
+	}
+	_, theme, err := LoadState(path)
+	if err != nil || theme != "dark" {
+		t.Fatalf("committed snapshot not readable: %v %s", err, theme)
+	}
+}

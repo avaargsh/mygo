@@ -61,7 +61,7 @@ func (s *shell) renderTerminal(c *ui.Context, snapshot core.WorkspaceSnapshot, p
 			ui.Text(c, fmt.Sprintf("Exit code: %d", code))
 		}
 		ui.Button(c, "Start shell").Disabled(state == core.TerminalRunning || state == core.TerminalStopping).OnClick(func() { s.startTerminal(t) })
-		ui.Button(c, "Close terminal").Disabled(t.Resource() == nil).OnClick(func() { s.stopTerminal(t) })
+		ui.Button(c, "Close terminal").Disabled(!t.CanStop()).OnClick(func() { s.stopTerminal(t) })
 	})
 	if term, ok := t.Resource().(*terminal.Terminal); ok {
 		terminal.View(c, term).Grow(1).MinHeight(0)

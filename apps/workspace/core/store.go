@@ -4,9 +4,12 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
+	"sync"
 )
 
 const maxStateBytes = 4 << 20
@@ -52,10 +55,20 @@ func LoadState(path string) (*Workspace, string, error) {
 	return w, s.Theme, nil
 }
 
-// SaveState writes a complete, validated snapshot through a same-directory
-// temporary file. Callers serialize saves. Cross-platform crash durability
-// (including directory sync and replacement semantics) is not yet verified.
+var stateSaveMu sync.Mutex
+
+// SaveState writes a complete validated snapshot through a same-directory
+// temporary file. Saves in this process are serialized; callers still own
+// Workspace mutations. Concurrent independent snapshots are last-writer-wins,
+// not merged. Cross-process coordination is outside this contract.
 func SaveState(path string, w *Workspace, theme string) error {
+	stateSaveMu.Lock()
+	defer stateSaveMu.Unlock()
+	return saveState(path, w, theme, os.Rename, syncStateDirectory)
+}
+
+// replace and syncDir allow deterministic fault injection at the commit boundary.
+func saveState(path string, w *Workspace, theme string, replace func(string, string) error, syncDir func(string) error) error {
 	if w == nil || !validTheme(theme) {
 		return errors.New("invalid workspace or theme")
 	}
@@ -85,5 +98,27 @@ func SaveState(path string, w *Workspace, theme string) error {
 	if err = f.Close(); err != nil {
 		return err
 	}
-	return os.Rename(f.Name(), path)
+	if err := replace(f.Name(), path); err != nil {
+		return err
+	}
+	if err := syncDir(filepath.Dir(path)); err != nil {
+		// The new snapshot may already be visible; do not claim rollback.
+		return fmt.Errorf("workspace replaced but directory sync failed: %w", err)
+	}
+	return nil
+}
+
+// Directory fsync is supported on the targeted Linux and macOS filesystems.
+// Other platforms retain the existing replacement behavior; this is not a
+// cross-platform power-loss guarantee.
+func syncStateDirectory(path string) error {
+	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
+		return nil
+	}
+	dir, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer dir.Close()
+	return dir.Sync()
 }
