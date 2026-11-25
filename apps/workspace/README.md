@@ -193,8 +193,8 @@ entries. Parent and Refresh are supported. The production adapter uses Go
 os.OpenRoot and Root.FS for traversal containment; the core validates single
 directory names and refuses non-directory entries. Root grants are memory-only
 and can be revoked even when their view is hidden. Restoring a Files tab does
-not access any directory. No file content preview, editing, upload, recursive
-scan or deletion is implemented. Directory reads are synchronous; the
+not access any directory. Bounded UTF-8 text preview is available; editing, upload, recursive scan
+and deletion are not implemented. Directory reads are synchronous; the
 5000-entry display limit is checked after enumeration. Large or slow
 filesystems still need a bounded asynchronous listing implementation.
 
