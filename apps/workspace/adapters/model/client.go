@@ -58,23 +58,23 @@ func NewClient(endpoint, model string) (*Client, error) {
 // Close releases idle HTTP connections. Active calls belong to their context.
 func (c *Client) Close() { c.http.CloseIdleConnections() }
 
-func (c *Client) Complete(ctx context.Context, apiKey string, messages []Message) (Completion, error) {
+func (c *Client) request(ctx context.Context, apiKey string, messages []Message, stream bool) (*http.Response, error) {
 	if err := ctx.Err(); err != nil {
-		return Completion{}, err
+		return nil, err
 	}
 	if strings.ContainsFunc(apiKey, func(r rune) bool { return r < 33 || r > 126 }) || len(apiKey) > 8192 {
-		return Completion{}, errors.New("invalid model credential")
+		return nil, errors.New("invalid model credential")
 	}
 	if len(messages) == 0 || len(messages) > 256 {
-		return Completion{}, errors.New("invalid message count")
+		return nil, errors.New("invalid message count")
 	}
 	total := 0
 	for _, m := range messages {
 		if m.Role != "user" && m.Role != "assistant" && m.Role != "system" {
-			return Completion{}, errors.New("unsupported message role")
+			return nil, errors.New("unsupported message role")
 		}
 		if !utf8.ValidString(m.Content) || len(m.Content) > maxRequestBytes-total {
-			return Completion{}, errors.New("invalid or oversized message content")
+			return nil, errors.New("invalid or oversized message content")
 		}
 		total += len(m.Content)
 	}
@@ -82,25 +82,37 @@ func (c *Client) Complete(ctx context.Context, apiKey string, messages []Message
 		Model    string    `json:"model"`
 		Messages []Message `json:"messages"`
 		Stream   bool      `json:"stream"`
-	}{c.model, messages, false})
+	}{c.model, messages, stream})
 	if err != nil || len(body) > maxRequestBytes {
-		return Completion{}, errors.New("invalid or oversized model request")
+		return nil, errors.New("invalid or oversized model request")
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint, bytes.NewReader(body))
 	if err != nil {
-		return Completion{}, errors.New("could not create model request")
+		return nil, errors.New("could not create model request")
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
+	if stream {
+		req.Header.Set("Accept", "text/event-stream")
+	} else {
+		req.Header.Set("Accept", "application/json")
+	}
 	if apiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+apiKey)
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
 		if ctx.Err() != nil {
-			return Completion{}, ctx.Err()
+			return nil, ctx.Err()
 		}
-		return Completion{}, errors.New("model request failed")
+		return nil, errors.New("model request failed")
+	}
+	return resp, nil
+}
+
+func (c *Client) Complete(ctx context.Context, apiKey string, messages []Message) (Completion, error) {
+	resp, err := c.request(ctx, apiKey, messages, false)
+	if err != nil {
+		return Completion{}, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
