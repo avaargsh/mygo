@@ -148,3 +148,25 @@ func TestChatSessionRejectsInvalidAndOversizedOutput(t *testing.T) {
 		t.Fatalf("oversized output accepted: %+v", snap)
 	}
 }
+
+func TestChatSessionRejectedDeltaCannotBecomeCompleted(t *testing.T) {
+	var s ChatSession
+	done, err := s.Start(context.Background(), func(_ context.Context, _ string, _ []Message, emit func(string) error) (Completion, error) {
+		if err := emit("valid"); err != nil {
+			return Completion{}, err
+		}
+		if err := emit(string([]byte{0xff})); err == nil {
+			return Completion{}, errors.New("invalid delta was accepted")
+		}
+		// A faulty adapter ignores the callback error and claims completion.
+		return Completion{Text: "valid", FinishReason: "stop"}, nil
+	}, "", "hello", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	awaitChat(t, done)
+	turn := s.Snapshot().Turns[0]
+	if turn.State != ChatFailed || turn.Assistant != "valid" || turn.FinishReason != "" {
+		t.Fatalf("rejected delta was treated as completion: %+v", turn)
+	}
+}
