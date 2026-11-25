@@ -84,6 +84,9 @@ func TestFilesReadBoundedRegularText(t *testing.T) {
 	if _, err := b.ReadFile("readme.md", 0); err == nil {
 		t.Fatal("zero byte limit was accepted")
 	}
+	if _, err := b.ReadFile("readme.md", MaxFileReadBytes+1); err == nil {
+		t.Fatal("caller exceeded the global preview limit")
+	}
 }
 
 func TestFilesReadRejectsUnlistedPathsDirectoriesAndSymlinks(t *testing.T) {
