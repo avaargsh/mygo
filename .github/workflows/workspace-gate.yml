@@ -2,9 +2,9 @@ name: Workspace Gate
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, feat/xerj-local-retrieval]
   push:
-    branches: [main, feat/workspace-m0-foundation, test/workspace-native-smoke]
+    branches: [main, feat/workspace-m0-foundation, test/workspace-native-smoke, feat/xerj-local-retrieval]
   workflow_dispatch:
 
 permissions:
