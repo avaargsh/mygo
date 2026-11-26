@@ -108,3 +108,64 @@ func TestWorkspaceChooserIsolatesDataAndRestoresSelection(t *testing.T) {
 		t.Fatalf("workspace did not write a valid snapshot at its own path: %v", err)
 	}
 }
+
+func TestClosingChecksDirtyWorkspaceAfterItsDirectoryIsMoved(t *testing.T) {
+	dir := t.TempDir()
+	h, err := newWorkspaceHost(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defaultProfile := h.current.profile
+	h.newName = "Research"
+	h.createWorkspace()
+	research := h.current
+	if research.profile == defaultProfile || h.chooserErr != "" {
+		t.Fatalf("create Research: %s", h.chooserErr)
+	}
+	research.open("notes")
+	research.note().Text = "still in memory"
+	h.selectWorkspace(defaultProfile)
+	if h.current.profile != defaultProfile || h.chooserErr != "" {
+		t.Fatalf("switch back to Default: %s", h.chooserErr)
+	}
+	researchDir, err := h.catalog.Directory(research.profile.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(researchDir, researchDir+".backup"); err != nil {
+		t.Fatal(err)
+	}
+
+	h.showChooser()
+	if h.chooserErr != "" || len(h.catalog.Profiles()) != 1 {
+		t.Fatalf("expected only Default after refresh: %v, %s", h.catalog.Profiles(), h.chooserErr)
+	}
+	var dialogs int
+	if h.confirmClose(func(opts mygo.MessageOptions) (mygo.MessageResult, error) {
+		dialogs++
+		if !strings.Contains(opts.Message, "Research") {
+			t.Fatalf("wrong workspace in close prompt: %q", opts.Message)
+		}
+		return mygo.MessageResult{Button: closeCancel}, nil
+	}) {
+		t.Fatal("quit ignored the unsaved note in the loaded Research workspace")
+	}
+	if dialogs != 1 || !research.note().Dirty() || research.note().Text != "still in memory" {
+		t.Fatal("cancel did not preserve the removed workspace's note in memory")
+	}
+	save := func(mygo.MessageOptions) (mygo.MessageResult, error) {
+		return mygo.MessageResult{Button: closeSave}, nil
+	}
+	if h.confirmClose(save) || !research.note().Dirty() || !strings.Contains(h.current.status, "Research: Note save failed") {
+		t.Fatal("a save failure should keep the window and unsaved edits")
+	}
+	if err := os.Rename(researchDir+".backup", researchDir); err != nil {
+		t.Fatal(err)
+	}
+	if !h.confirmClose(save) || research.note().Dirty() {
+		t.Fatal("restoring the directory should let the user save and exit")
+	}
+	if got, err := os.ReadFile(filepath.Join(researchDir, "notes.md")); err != nil || string(got) != "still in memory" {
+		t.Fatalf("note missing after saving to the restored directory: %q, %v", got, err)
+	}
+}

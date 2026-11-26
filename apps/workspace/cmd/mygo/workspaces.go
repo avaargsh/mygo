@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/egoist/mygo"
@@ -160,16 +161,33 @@ func (h *workspaceHost) confirmClose(dialog func(mygo.MessageOptions) (mygo.Mess
 	if !h.current.confirmClose(dialog) {
 		return false
 	}
-	for _, profile := range h.catalog.Profiles() {
-		s := h.loaded[profile.ID]
-		if s != nil && s != h.current {
-			status := s.status
-			if !s.confirmClose(dialog) {
-				if s.status != status {
-					h.current.status = profile.Name + ": " + s.status
-				}
-				return false
+	// Disk discovery can drop a profile while its loaded shell still owns
+	// unsaved edits. Check the live shells, not the chooser inventory.
+	var hidden []*shell
+	for _, s := range h.loaded {
+		if s != h.current {
+			hidden = append(hidden, s)
+		}
+	}
+	slices.SortFunc(hidden, func(a, b *shell) int {
+		if aDefault, bDefault := a.profile.ID == core.DefaultWorkspaceID, b.profile.ID == core.DefaultWorkspaceID; aDefault != bDefault {
+			if aDefault {
+				return -1
 			}
+			return 1
+		}
+		if cmp := strings.Compare(strings.ToLower(a.profile.Name), strings.ToLower(b.profile.Name)); cmp != 0 {
+			return cmp
+		}
+		return strings.Compare(a.profile.ID, b.profile.ID)
+	})
+	for _, s := range hidden {
+		status := s.status
+		if !s.confirmClose(dialog) {
+			if s.status != status {
+				h.current.status = s.profile.Name + ": " + s.status
+			}
+			return false
 		}
 	}
 	return true
