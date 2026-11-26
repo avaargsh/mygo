@@ -464,7 +464,9 @@ plain-text excerpt. A source is a label, not a link or a verified citation.
 See [the XERJ adapter guide](../../plugins/xerj/README.md) to prepare a local
 node and look up its indexed slug. MyGo does not install or start XERJ,
 scan folders, create indices, or contact a remote node. Connection settings,
-queries and results are not written to workspace state. A saved Search tab
+queries and results are not written to workspace state. Switching away from
+Search does not cancel a running query. To cancel it without reopening Search,
+choose **Sessions** and then **Cancel hidden search**. A saved Search tab
 reopens idle.
 
 ### Use a Search excerpt in Chat
