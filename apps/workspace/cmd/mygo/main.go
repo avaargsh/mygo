@@ -163,6 +163,7 @@ func (s *shell) view(c *ui.Context) {
 			s.commandButton(c, "open-browser", "content.browser", "Browser")
 			s.commandButton(c, "open-terminal", "content.terminal", "Terminal")
 			s.commandButton(c, "open-files", "content.files", "Files")
+			s.commandButton(c, "open-search", "content.search", "Search")
 			s.commandButton(c, "open-chat", "content.chat", "Chat")
 			s.commandButton(c, "new-chat", "content.new-chat", "New chat")
 			s.commandButton(c, "split-right", "layout.split-right", "Split right")
@@ -198,6 +199,15 @@ func (s *shell) view(c *ui.Context) {
 		}
 		if f := s.filesSession(); f != nil && f.browser != nil && core.SessionOwner(snapshot, "files") == "" {
 			ui.Button(c.Key("revoke-hidden-files"), "Revoke hidden folder access").OnClick(func() { s.fileResult(f.close()) })
+		}
+		if search := s.searchSession(); search != nil && core.SessionOwner(snapshot, "search") == "" {
+			_, state := search.owner.snapshot()
+			if state == "Connecting" || state == "Connected" {
+				ui.Button(c.Key("disconnect-hidden-search"), "Disconnect hidden search").OnClick(func() {
+					search.owner.stop()
+					search.query = ""
+				})
+			}
 		}
 		s.renderChatActivity(c, snapshot)
 		if s.status != "" {
@@ -306,6 +316,12 @@ func (s *shell) renderContent(c *ui.Context, snapshot core.WorkspaceSnapshot, pa
 		} else {
 			ui.Text(c, "Files session unavailable")
 		}
+	case "search":
+		if search, ok := session.Value.(*searchSession); ok && search != nil {
+			s.renderSearch(c, search)
+		} else {
+			ui.Text(c, "Search session unavailable")
+		}
 	case "chat":
 		if ch, ok := session.Value.(*chatViewSession); ok && ch != nil {
 			s.renderChat(c, snapshot, paneID, ch)
@@ -407,6 +423,9 @@ func main() {
 			}
 		})
 		s.window.OnClosed(func() {
+			if search := s.searchSession(); search != nil {
+				search.owner.stop()
+			}
 			s.closeChats()
 			if session := s.content.Session("browser"); session != nil {
 				if browser, ok := session.Value.(*browserSession); ok && browser != nil {
@@ -425,7 +444,12 @@ func main() {
 			}
 		})
 	})
-	if err := mygo.App.Run(); err != nil {
+	err = mygo.App.Run()
+	if search := s.searchSession(); search != nil {
+		search.owner.stop()
+		search.owner.wait()
+	}
+	if err != nil {
 		log.Fatal(err)
 	}
 }
