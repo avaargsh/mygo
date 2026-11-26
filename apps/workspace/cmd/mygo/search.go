@@ -102,10 +102,17 @@ func (s *shell) renderSearch(c *ui.Context, session *searchSession) {
 		ui.Column(c).Gap(spaceControl).Children(func() {
 			for i, hit := range result.Hits {
 				ui.Column(c.Key(i)).Gap(4).Children(func() {
-					ui.Text(c, hit.Path).Bold()
+					ui.Text(c, searchHitLocation(hit)).Bold()
 					ui.Text(c, hit.Text)
 				})
 			}
 		})
 	})
+}
+
+func searchHitLocation(hit xerj.Hit) string {
+	if hit.Line > 0 {
+		return fmt.Sprintf("%s:%d", hit.Path, hit.Line)
+	}
+	return hit.Path
 }
