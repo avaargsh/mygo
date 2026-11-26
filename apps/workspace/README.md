@@ -111,8 +111,9 @@ the current workspace's note.
 On restart, the last selected workspace opens with its saved layout. If that
 workspace's directory is missing, MyGo opens **Default** and leaves the saved
 selection unchanged. Restore the missing directory to reopen it on the next
-launch, or select another workspace to replace the saved selection. Existing
-files under `MyGoWorkspace` belong to **Default**. Named workspaces use private
+launch. To replace the saved selection, select another workspace or choose
+**Keep Default on startup** in **Workspaces**. A partially restored directory
+without a valid `profile.json` still reports an error. Existing files under `MyGoWorkspace` belong to **Default**. Named workspaces use private
 directories under `MyGoWorkspace/workspaces/<id>`. Names are for display, and
 stable IDs select storage and the named Browser partitions. The local picker
 supports creating up to 32 workspaces including Default.

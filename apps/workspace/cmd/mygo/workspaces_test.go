@@ -165,4 +165,32 @@ func TestWorkspaceStartupUsesDefaultWhenSelectedWorkspaceIsMissing(t *testing.T)
 	if err != nil || restored.current.profile != profile {
 		t.Fatalf("restored profile was not selected: %v", err)
 	}
+
+	// This time deliberately keep Default before restoring the old directory.
+	if err := os.Rename(profileDir, profileDir+".backup"); err != nil {
+		t.Fatal(err)
+	}
+	h, err = newWorkspaceHost(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tt = ui.NewTester(h.view, 1200, 800)
+	tt.Frame()
+	if err := tt.Click("Workspaces"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if err := tt.Click("Keep Default on startup"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(profileDir+".backup", profileDir); err != nil {
+		t.Fatal(err)
+	}
+	kept, err := newWorkspaceHost(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if kept.current.profile.ID != core.DefaultWorkspaceID || kept.catalog.MissingSavedWorkspace() {
+		t.Fatal("an explicit Default selection did not survive restart")
+	}
 }

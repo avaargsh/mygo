@@ -248,7 +248,7 @@ func (c *WorkspaceCatalog) Select(id string) error {
 	if _, err := c.Directory(id); err != nil {
 		return err
 	}
-	if c.active == id {
+	if c.active == id && !c.missingSavedWorkspace {
 		return nil
 	}
 	raw, err := json.Marshal(workspaceSelection{Version: 1, ID: id})
