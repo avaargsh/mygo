@@ -135,6 +135,16 @@ def exercise_workspace():
         worker.start()
         origin = f"http://127.0.0.1:{server.server_port}"
         try:
+            state = os.path.join(os.environ["XDG_CONFIG_HOME"], "MyGoWorkspace", "state.json")
+            with open(state, encoding="utf-8") as file:
+                search_pane = json.load(file)["workspace"]["activePane"]
+            click("Search (active)")
+            click("Move tab to next pane")
+            find("pane-root (focused)")
+            click("Close Home")
+            click(search_pane)
+            find(f"{search_pane} (focused)")
+
             divider = find("divider", contains=True, component=True)
             x, y = divider.x + divider.width // 2, divider.y + divider.height // 2
             xdotool("mousemove", str(x), str(y), "mousedown", "1", "mousemove", str(x + 70), str(y), "sleep", "0.2", "mouseup", "1")
@@ -175,12 +185,7 @@ def exercise_workspace():
                 and bounds.y + bounds.height <= window.y + window.height
             ):
                 raise RuntimeError(f"Send message is clipped: control {bounds}, window {window}")
-            # Exercise the real accessible button action. A centered X11 click
-            # can hit an overlapping element in a split pane; keyboard input
-            # above still goes through X11 and is checked against the editor.
-            action = send.queryAction()
-            if not action.doAction(0):
-                raise RuntimeError("Native Send message action was not accepted")
+            click("Send message")
             if not model_requested.wait(10):
                 labels = sorted({node.name for node in walk(pyatspi.Registry.getDesktop(0)) if node.name})
                 raise RuntimeError(f"Chat did not reach the local model fixture. Labels: {labels[:100]}")
@@ -188,9 +193,7 @@ def exercise_workspace():
             find("Finish: stop")
             print("PASS: installed Chat rendered and completed a streamed response without credentials")
 
-            click("Move tab to next pane")
-            click("Close Home")
-            click("Search")
+            click("Search (active)")
             find("Search local documents")
         finally:
             server.shutdown()
