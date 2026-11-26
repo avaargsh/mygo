@@ -9,8 +9,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -252,7 +254,7 @@ func TestSeeksBackToBack(t *testing.T) {
 		{"seconds.mkv", secondsMKV, 500 * time.Millisecond, 1500 * time.Millisecond, green},
 	} {
 		t.Run(v.name, func(t *testing.T) {
-			if strings.HasSuffix(v.name, ".mkv") && runtime.GOOS == "darwin" {
+			if strings.HasSuffix(v.name, ".mkv") && (runtime.GOOS == "darwin" || runtime.GOOS == "ios") {
 				t.Skip("AVFoundation does not read Matroska")
 			}
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -275,46 +277,63 @@ func TestSeeksBackToBack(t *testing.T) {
 	}
 }
 
-// av1.mp4 and vp9.mp4 are 0.5 s of 64×64 red in AV1 and in VP9, with
-// silent AAC, made with ffmpeg from lavfi's color and anullsrc (libsvtav1,
-// libvpx-vp9).
+// av1.mp4, vp9.mp4 and hevc.ts are 0.5 s of 64×64 red in AV1, VP9 and
+// HEVC, with silent AAC, made with ffmpeg from lavfi's color and
+// anullsrc (libsvtav1, libvpx-vp9, libx265).
 var (
 	//go:embed testdata/av1.mp4
 	av1MP4 []byte
 	//go:embed testdata/vp9.mp4
 	vp9MP4 []byte
+	//go:embed testdata/hevc.ts
+	hevcTS []byte
 )
 
-// TestNoDecoder checks that a video the system has no decoder for, whose
-// sound it decodes, fails rather than stay loading for good: GStreamer
-// without an AV1 decoder plays the sound of av1.mp4, and AVFoundation
-// that of vp9.mp4, with no picture. Where the system decodes one, it
-// plays.
-func TestNoDecoder(t *testing.T) {
+// TestNoPicture checks that a video the system gives no picture for,
+// whose sound it decodes, fails rather than stay loading for good, from
+// a file and from bytes: GStreamer without an AV1 decoder plays the
+// sound of av1.mp4, and AVFoundation that of vp9.mp4, for which it has
+// no decoder, and of hevc.ts, whose HEVC its MPEG-TS demuxer leaves out,
+// with no picture. Where the system plays one, it plays.
+func TestNoPicture(t *testing.T) {
 	for _, v := range []struct {
 		name string
 		data []byte
-	}{{"av1.mp4", av1MP4}, {"vp9.mp4", vp9MP4}} {
+	}{{"av1.mp4", av1MP4}, {"vp9.mp4", vp9MP4}, {"hevc.ts", hevcTS}} {
 		t.Run(v.name, func(t *testing.T) {
-			p, err := OpenData(v.data)
-			if errors.Is(err, ErrUnsupported) {
-				t.Skip(err)
-			}
-			if err != nil {
+			path := filepath.Join(t.TempDir(), v.name)
+			if err := os.WriteFile(path, v.data, 0o644); err != nil {
 				t.Fatal(err)
 			}
-			t.Cleanup(p.Close)
-			p.SetMuted(true)
-			tt := ui.NewTester(func(c *ui.Context) { ui.Video(c, p).Size(64, 64) }, 64, 64)
-			wait.Until(t, "a picture or an error", func() bool {
-				tt.Frame()
-				return p.Ready() || p.Err() != nil
-			})
-			if err := p.Err(); err != nil {
-				t.Log(err)
-				if p.Playing() {
-					t.Error("a video that failed plays")
-				}
+			for _, o := range []struct {
+				name string
+				open func() (*ui.VideoPlayer, error)
+			}{
+				{"Open", func() (*ui.VideoPlayer, error) { return Open(path) }},
+				{"OpenData", func() (*ui.VideoPlayer, error) { return OpenData(v.data) }},
+			} {
+				t.Run(o.name, func(t *testing.T) {
+					p, err := o.open()
+					if errors.Is(err, ErrUnsupported) {
+						t.Skip(err)
+					}
+					if err != nil {
+						t.Fatal(err)
+					}
+					t.Cleanup(p.Close)
+					p.SetMuted(true)
+					tt := ui.NewTester(func(c *ui.Context) { ui.Video(c, p).Size(64, 64) }, 64, 64)
+					wait.Until(t, "a picture or an error", func() bool {
+						tt.Frame()
+						return p.Ready() || p.Err() != nil
+					})
+					if err := p.Err(); err != nil {
+						t.Log(err)
+						if p.Playing() {
+							t.Error("a video that failed plays")
+						}
+					}
+				})
 			}
 		})
 	}
@@ -346,4 +365,79 @@ func colorName(c color.RGBA) string {
 		return "green"
 	}
 	return "blue"
+}
+
+// testdata/rgb.ts, rgb.m2ts, rgb.mpg and rgb.avi are rgb.mp4 in MPEG-TS,
+// in MPEG-TS of 192-byte packets (as Blu-ray's), in an MPEG-2 program
+// stream (MPEG-2 video at 25 fps, MP2) and in AVI (MJPEG, no sound),
+// made with ffmpeg.
+//
+//go:embed testdata/rgb.ts testdata/rgb.m2ts testdata/rgb.mpg testdata/rgb.avi
+var containers embed.FS
+
+// TestOpenDataContainers checks that OpenData plays a video of each
+// container that Open plays: AVFoundation read every video in memory as
+// MP4, and could not open MPEG-TS, an MPEG program stream or AVI from
+// bytes.
+func TestOpenDataContainers(t *testing.T) {
+	for _, name := range []string{"rgb.ts", "rgb.m2ts", "rgb.mpg", "rgb.avi"} {
+		t.Run(name, func(t *testing.T) {
+			data, err := containers.ReadFile("testdata/" + name)
+			if err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(t.TempDir(), name)
+			if err := os.WriteFile(path, data, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if name == "rgb.avi" && macOSBefore(27) {
+				// It loads, its MJPEG track decodable, and plays to its end
+				// without a picture, from a file too: no error to wait for.
+				t.Skip("AVFoundation before macOS 27 shows no picture of rgb.avi")
+			}
+			if err := opens(t, path); err != nil {
+				t.Skip("the system does not play the file:", err)
+			}
+			_, _, shows := played(t, func() (*ui.VideoPlayer, error) { return OpenData(data) })
+			if c := shows(); !near(c, red) {
+				t.Errorf("the first picture shows %v, want red", c)
+			}
+		})
+	}
+}
+
+// opens opens the file with Open, and returns the error it fails with,
+// or nil once it shows its first picture.
+func opens(t *testing.T, path string) error {
+	t.Helper()
+	p, err := Open(path)
+	if errors.Is(err, ErrUnsupported) {
+		t.Skip(err)
+	}
+	if err != nil {
+		return err
+	}
+	defer p.Close()
+	p.SetMuted(true)
+	tt := ui.NewTester(func(c *ui.Context) { ui.Video(c, p).Size(64, 48) }, 64, 48)
+	wait.Until(t, "a picture or an error", func() bool {
+		tt.Frame()
+		return p.Ready() || p.Err() != nil
+	})
+	return p.Err()
+}
+
+// macOSBefore is whether the system is macOS older than the major
+// version.
+func macOSBefore(major int) bool {
+	if runtime.GOOS != "darwin" {
+		return false
+	}
+	out, err := exec.Command("sw_vers", "-productVersion").Output()
+	if err != nil {
+		return false
+	}
+	v, _, _ := strings.Cut(strings.TrimSpace(string(out)), ".")
+	n, err := strconv.Atoi(v)
+	return err == nil && n < major
 }
