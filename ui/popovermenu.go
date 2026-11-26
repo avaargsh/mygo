@@ -967,11 +967,12 @@ func (m *menuParts) keys(level int, panel *node, choices []*node, groups, stops 
 	if st := panel.st; st.typing && st.typed != "" && n > 0 {
 		// From the item after the one highlighted, round to it: the same
 		// letter again goes to the next item starting with it.
-		start := at
-		if len([]rune(st.typed)) > 1 && at >= 0 {
+		typed, start := strings.ToLower(st.typed), at
+		if strings.Count(typed, typed[:1]) == len(typed) {
+			typed = typed[:1]
+		} else if at >= 0 {
 			start = at - 1
 		}
-		typed := strings.ToLower(st.typed)
 		for k := 1; k <= n; k++ {
 			if strings.HasPrefix(strings.ToLower(menuItemName(choices[(start+k+n)%n])), typed) {
 				move((start + k + n) % n)
@@ -1451,8 +1452,8 @@ func relativeLuminance(c Color) float64 {
 }
 
 // shortcutText writes an accelerator (accelerator) as a menu shows it by
-// its item: with the symbols of macOS there, as "⇧⌘Z", and as "Ctrl+Shift+Z"
-// elsewhere.
+// its item: with the symbols of macOS there and in a browser on a Mac, as
+// "⇧⌘Z", and as "Ctrl+Shift+Z" elsewhere.
 func shortcutText(a string) string {
 	if a == "" {
 		return ""
@@ -1463,7 +1464,19 @@ func shortcutText(a string) string {
 		key = strings.ToUpper(key)
 	}
 	var b strings.Builder
-	if platform.MacKeys {
+	if platform.MacKeys || platform.MacBrowser {
+		if platform.MacBrowser {
+			// A browser on a Mac sends Command as Control and Control as
+			// Super: write the keys pressed.
+			for i, m := range mods {
+				switch m {
+				case "Ctrl":
+					mods[i] = "Super"
+				case "Super":
+					mods[i] = "Ctrl"
+				}
+			}
+		}
 		// In the order of macOS's menus.
 		for _, m := range [...][2]string{{"Ctrl", "⌃"}, {"Alt", "⌥"}, {"Shift", "⇧"}, {"Super", "⌘"}} {
 			if slices.Contains(mods, m[0]) {

@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"image"
 	"math"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -451,6 +452,10 @@ type System struct {
 	// (RegisterAppFont) itself: appFonts of them so far.
 	apart    bool
 	appFonts int
+	// closer has the engine of a System New made close once the System is
+	// unreachable (closeWhenUnreachable), so that apps that make none do
+	// not link closing engines.
+	closer func(s *System)
 	// fonts caches the font of each style.
 	fonts map[Style]*Font
 	// watchers hear of the fonts that loaded in the background, in
@@ -576,6 +581,7 @@ func Shared() *System { return shared() }
 func New() *System {
 	s := newSystem()
 	s.apart = true
+	s.closer = closeWhenUnreachable
 	return s
 }
 
@@ -689,17 +695,27 @@ func (s *System) takeAppFonts() {
 // engine starts the system's text engine on first use.
 func (s *System) engine() engine {
 	if s.eng == nil {
-		s.eng = newEngine()
-		if u, ok := s.eng.(uiFamilySetter); ok {
-			u.setUIFamily(s.uiFamily)
-		}
-		if f, ok := s.eng.(fontRenderer); ok && s.rendering != nil {
-			r := s.rendering
-			f.setFontRendering(r[0], r[1], r[2])
-		}
-		s.hearFontLoads()
+		s.start(newEngine())
 	}
 	return s.eng
+}
+
+// start makes e the system's engine. The engine of a System New made
+// closes once the System is unreachable (closer); Shared's lives as long
+// as the process.
+func (s *System) start(e engine) {
+	s.eng = e
+	if s.closer != nil {
+		s.closer(s)
+	}
+	if u, ok := e.(uiFamilySetter); ok {
+		u.setUIFamily(s.uiFamily)
+	}
+	if f, ok := e.(fontRenderer); ok && s.rendering != nil {
+		r := s.rendering
+		f.setFontRendering(r[0], r[1], r[2])
+	}
+	s.hearFontLoads()
 }
 
 // maxFonts is how many Fonts an engine keeps before the System lets them
@@ -715,6 +731,31 @@ type fontForgetter interface {
 	fontCount() int
 	forgetFonts()
 	releaseFonts()
+}
+
+// engineCloser is an engine holding what a System New made gives back
+// once unreachable: a Tester's window makes one, and a test binary
+// hundreds, which on Linux kept as many Pango font maps, each with a
+// thread of fontconfig's (#1902). close releases it on a cleanup
+// goroutine of the runtime (closeWhenUnreachable), when nothing uses the
+// engine anymore; the engine must not refer to its System, which would
+// then stay reachable for good. Layouts kept elsewhere may still hold its
+// Fonts (nativeFonts.closeFonts).
+type engineCloser interface{ close() }
+
+// closeWhenUnreachable has the engine of s closed once s is unreachable.
+func closeWhenUnreachable(s *System) {
+	if c, ok := s.eng.(engineCloser); ok {
+		runtime.AddCleanup(s, closeEngine, c)
+	}
+}
+
+// closeEngine closes an engine whose System is unreachable, one engine at
+// a time (closing).
+func closeEngine(e engineCloser) {
+	closing.Lock()
+	defer closing.Unlock()
+	e.close()
 }
 
 // shapingKeeper is an engine that keeps what shaping a text took across
@@ -1502,15 +1543,31 @@ func (s *System) paragraph(out []Line, p Params, spans []Span, runes []rune, sta
 		shaped = append(shaped, shapedLine{start: len(text), end: len(text)})
 	}
 	truncated := false
-	if maxLines > 0 && (len(shaped) > maxLines || len(shaped) == maxLines && continues) {
-		from, width := shaped[maxLines-1].start, p.Width
-		if from == 0 && width > 0 {
-			// The first line, beside its indent.
-			width = max(width-indent, 1)
+	if maxLines > 0 {
+		overflows := len(shaped) > maxLines || len(shaped) == maxLines && continues
+		if !overflows && len(shaped) == maxLines && p.Width > 0 && !p.NoWrap {
+			limit := p.Width
+			if shaped[maxLines-1].start == 0 {
+				limit -= indent
+			}
+			w, pad := linePaddedWidth(shaped[maxLines-1], text, spans, p.KeepSpaces)
+			overflows = w+pad > 0 && w+pad > limit+1e-3
 		}
-		last := s.ellipsize(text, spans, from, p, width, rtl)
-		shaped = append(shaped[:maxLines-1], last)
-		truncated = true
+		if overflows {
+			from, width := shaped[maxLines-1].start, p.Width
+			if from == 0 && width > 0 {
+				// The first line, beside its indent.
+				width -= indent
+			}
+			var last shapedLine
+			if p.Width > 0 && width <= 0 {
+				last = shapedLine{start: from, end: from, mark: from}
+			} else {
+				last = s.ellipsize(text, spans, from, p, width, rtl)
+			}
+			shaped = append(shaped[:maxLines-1], last)
+			truncated = true
+		}
 	}
 	if hy != nil {
 		for k := range shaped {
@@ -1802,10 +1859,19 @@ var ellipsis = []rune{'…'}
 
 // ellipsize lays out the paragraph text from rune start on one line ending
 // with an ellipsis: as many of its graphemes as fit width with it (all of
-// them for 0). With Params.TruncateMiddle or TruncateStart the ellipsis
-// stands in the middle or at the start of the line instead, where
-// ellipsizeInside finds room for it.
+// them for 0), or nothing where width leaves no room for the ellipsis
+// itself. With Params.TruncateMiddle or TruncateStart the ellipsis stands
+// in the middle or at the start of the line instead, where ellipsizeInside
+// finds room for it.
 func (s *System) ellipsize(text []rune, spans []Span, start int, p Params, width float32, rtl bool) shapedLine {
+	mark := markOf(p)
+	var ellipsis float32
+	if width > 0 {
+		ellipsis = s.markWidth(p, mark, rtl)
+		if ellipsis > width {
+			return shapedLine{start: start, end: start, mark: start}
+		}
+	}
 	if (p.TruncateMiddle || p.TruncateStart) && s.inside != nil && width > 0 {
 		if l, ok := s.inside(s, text, spans, start, p, width, rtl); ok {
 			return l
@@ -1814,10 +1880,9 @@ func (s *System) ellipsize(text []rune, spans []Span, start int, p Params, width
 	e := s.engine()
 	rest := text[start:]
 	restSpans := spansIn(spans, start, len(text))
-	mark := markOf(p)
 	cut := len(rest)
+	var cuts []int
 	if width > 0 {
-		ellipsis := s.markWidth(p, mark, rtl)
 		advances := s.clusterAdvances(rest, restSpans, p, rtl)
 		var b Boundaries
 		b.Reset(rest)
@@ -1841,6 +1906,7 @@ func (s *System) ellipsize(text []rune, spans []Span, start int, p Params, width
 			if w+gw+padEnd(restSpans, j)+ellipsis > width {
 				break
 			}
+			cuts = append(cuts, cut)
 			w += gw
 			k = j
 			cut = next
@@ -1849,25 +1915,53 @@ func (s *System) ellipsize(text []rune, spans []Span, start int, p Params, width
 	for cut > 0 && unicode.IsSpace(rest[cut-1]) {
 		cut--
 	}
-	t := append(append(s.ellipsized[:0], rest[:cut]...), mark...)
-	s.ellipsized = t
-	out := shapedLine{start: start, end: start + cut, mark: start + cut}
-	// The ellipsis takes the style of the text it ends.
-	tSpans := spansIn(restSpans, 0, cut)
-	if n := len(tSpans); n > 0 && tSpans[n-1].End == cut {
-		tSpans[n-1].End += len(mark)
-	}
-	for _, l := range e.shape(t, p.Style, tSpans, 0, rtl, false) {
-		for _, run := range l.runs {
-			run.start, run.end = start+min(run.start, cut), start+min(run.end, cut)
-			for i := range run.glyphs {
-				if g := &run.glyphs[i]; g.Cluster >= cut {
-					g.Cluster = -1
-				} else {
-					g.Cluster += start
+	shapeCut := func(cut int) shapedLine {
+		t := append(append(s.ellipsized[:0], rest[:cut]...), mark...)
+		s.ellipsized = t
+		out := shapedLine{start: start, end: start + cut, mark: start + cut}
+		// The ellipsis takes the style of the text it ends.
+		tSpans := spansIn(restSpans, 0, cut)
+		if n := len(tSpans); n > 0 && tSpans[n-1].End == cut {
+			tSpans[n-1].End += len(mark)
+		}
+		for _, l := range e.shape(t, p.Style, tSpans, 0, rtl, false) {
+			for _, run := range l.runs {
+				run.start, run.end = start+min(run.start, cut), start+min(run.end, cut)
+				for i := range run.glyphs {
+					if g := &run.glyphs[i]; g.Cluster >= cut {
+						g.Cluster = -1
+					} else {
+						g.Cluster += start
+					}
 				}
+				out.runs = append(out.runs, run)
 			}
-			out.runs = append(out.runs, run)
+		}
+		return out
+	}
+	out := shapeCut(cut)
+	if width > 0 {
+		for {
+			w, pad := linePaddedWidth(out, text, spans, p.KeepSpaces)
+			if w+pad <= width+1e-3 {
+				break
+			}
+			if cut == 0 {
+				return shapedLine{start: start, end: start, mark: start}
+			}
+			for len(cuts) > 0 && cuts[len(cuts)-1] >= cut {
+				cuts = cuts[:len(cuts)-1]
+			}
+			if len(cuts) > 0 {
+				cut = cuts[len(cuts)-1]
+				cuts = cuts[:len(cuts)-1]
+			} else {
+				cut = 0
+			}
+			for cut > 0 && unicode.IsSpace(rest[cut-1]) {
+				cut--
+			}
+			out = shapeCut(cut)
 		}
 	}
 	return out
@@ -1934,57 +2028,79 @@ func (s *System) ellipsizeInside(text []rune, spans []Span, start int, p Params,
 			break
 		}
 	}
-	// The ellipsis takes the place of the spaces beside it.
-	cut, resume := g[head], g[tail]
-	for cut > 0 && unicode.IsSpace(rest[cut-1]) {
-		cut--
-	}
-	for resume < len(rest) && unicode.IsSpace(rest[resume]) {
-		resume++
-	}
-	if head == tail || resume == len(rest) {
-		return shapedLine{}, false
-	}
-	t := append(append(append(s.ellipsized[:0], rest[:cut]...), mark...), rest[resume:]...)
-	s.ellipsized = t
-	// The ellipsis takes the style of the text before it, or of the text
-	// after it where it starts the line, as it takes that of the text it
-	// ends at the end of one; the text after it keeps its own.
-	shift := cut + len(mark)
-	tSpans := spansIn(restSpans, 0, cut)
-	after := spansIn(restSpans, resume, len(rest))
-	if k := len(tSpans); k > 0 && tSpans[k-1].End == cut {
-		tSpans[k-1].End = shift
-	} else if len(after) > 0 && cut > 0 {
-		tSpans = append(tSpans, Span{End: shift})
-	}
-	for _, sp := range after {
-		sp.End += shift
-		tSpans = append(tSpans, sp)
-	}
-	out := shapedLine{start: start, end: len(text), mark: start + cut}
-	// A rune of t, as one of the paragraph: those of the ellipsis are at
-	// the runes it hides.
-	at := func(i int) int {
-		if i <= cut {
-			return start + i
+	shapeInside := func(head, tail int) (shapedLine, bool) {
+		// The ellipsis takes the place of the spaces beside it.
+		cut, resume := g[head], g[tail]
+		for cut > 0 && unicode.IsSpace(rest[cut-1]) {
+			cut--
 		}
-		return start + resume + max(i-shift, 0)
-	}
-	for _, l := range s.engine().shape(t, p.Style, tSpans, 0, rtl, false) {
-		for _, run := range l.runs {
-			run.start, run.end = at(run.start), at(run.end)
-			for i := range run.glyphs {
-				if g := &run.glyphs[i]; g.Cluster >= cut && g.Cluster < shift {
-					g.Cluster = -1
-				} else {
-					g.Cluster = at(g.Cluster)
-				}
+		for resume < len(rest) && unicode.IsSpace(rest[resume]) {
+			resume++
+		}
+		if head == tail || resume == len(rest) {
+			return shapedLine{}, false
+		}
+		t := append(append(append(s.ellipsized[:0], rest[:cut]...), mark...), rest[resume:]...)
+		s.ellipsized = t
+		// The ellipsis takes the style of the text before it, or of the text
+		// after it where it starts the line, as it takes that of the text it
+		// ends at the end of one; the text after it keeps its own.
+		shift := cut + len(mark)
+		tSpans := spansIn(restSpans, 0, cut)
+		after := spansIn(restSpans, resume, len(rest))
+		if k := len(tSpans); k > 0 && tSpans[k-1].End == cut {
+			tSpans[k-1].End = shift
+		} else if len(after) > 0 && cut > 0 {
+			tSpans = append(tSpans, Span{End: shift})
+		}
+		for _, sp := range after {
+			sp.End += shift
+			tSpans = append(tSpans, sp)
+		}
+		out := shapedLine{start: start, end: len(text), mark: start + cut}
+		// A rune of t, as one of the paragraph: those of the ellipsis are at
+		// the runes it hides.
+		at := func(i int) int {
+			if i <= cut {
+				return start + i
 			}
-			out.runs = append(out.runs, run)
+			return start + resume + max(i-shift, 0)
+		}
+		for _, l := range s.engine().shape(t, p.Style, tSpans, 0, rtl, false) {
+			for _, run := range l.runs {
+				run.start, run.end = at(run.start), at(run.end)
+				for i := range run.glyphs {
+					if g := &run.glyphs[i]; g.Cluster >= cut && g.Cluster < shift {
+						g.Cluster = -1
+					} else {
+						g.Cluster = at(g.Cluster)
+					}
+				}
+				out.runs = append(out.runs, run)
+			}
+		}
+		return out, true
+	}
+	for {
+		out, ok := shapeInside(head, tail)
+		if !ok {
+			return shapedLine{}, false
+		}
+		w, pad := linePaddedWidth(out, text, spans, p.KeepSpaces)
+		if w+pad <= width+1e-3 {
+			return out, true
+		}
+		switch {
+		case head > 0 && (tail == n || headW >= tailW):
+			head--
+			headW -= advance(head)
+		case tail < n:
+			tailW -= advance(tail)
+			tail++
+		default:
+			return shapedLine{}, false
 		}
 	}
-	return out, true
 }
 
 // markOf returns the ellipsis of a text, "…" unless Params.Ellipsis gives

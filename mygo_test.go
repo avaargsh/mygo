@@ -296,6 +296,21 @@ func TestInputRegion(t *testing.T) {
 	}
 }
 
+func TestWindowPosition(t *testing.T) {
+	_, fw := testWindow(t, WindowOptions{Position: &Point{}})
+	if o := fw.Opts; o.X != 0 || o.Y != 0 || o.Center {
+		t.Errorf("at %d,%d, centered %v; want 0,0 as given", o.X, o.Y, o.Center)
+	}
+	_, fw = testWindow(t, WindowOptions{X: 10, Y: 20, Position: &Point{X: 30, Y: 40}})
+	if o := fw.Opts; o.X != 30 || o.Y != 40 || o.Center {
+		t.Errorf("at %d,%d, centered %v; want Position over X and Y", o.X, o.Y, o.Center)
+	}
+	_, fw = testWindow(t, WindowOptions{})
+	if o := fw.Opts; !o.Center {
+		t.Error("the zero value is not centered")
+	}
+}
+
 func TestWindowOptions(t *testing.T) {
 	parent, _ := testWindow(t, WindowOptions{})
 	_, fw := testWindow(t, WindowOptions{
@@ -1067,6 +1082,39 @@ func TestChannelsClosedAtOnce(t *testing.T) {
 		if m["t"] == "chan" && m["end"] == true {
 			t.Fatalf("the page was told about the end of channel %v, which it closed", m["c"])
 		}
+	}
+}
+
+// A call the page may cancel with a signal streams through its channels,
+// and canceling it cancels the method's context.
+func TestChannelsOfACancelableCall(t *testing.T) {
+	s := &streamer{sent: make(chan error, 16), stopped: make(chan error, 1)}
+	bindForTest(t, "Stream", s)
+	_, fw := testWindow(t, WindowOptions{})
+
+	page(fw, `{"t":"call","id":1,"k":"tok","m":"Stream.Count","a":[2,7],"cancel":true}`)
+	reply := received(t, fw, func(m map[string]any) bool { return m["t"] == "reply" && m["id"] == float64(1) })
+	if reply["ok"] != true {
+		t.Fatalf("a cancelable call could not send on its channel: %v", reply)
+	}
+	var got []any
+	for _, m := range pageMessages(t, fw) {
+		if m["t"] == "chan" && m["c"] == float64(7) && m["end"] != true {
+			got = append(got, m["p"])
+		}
+	}
+	if len(got) != 2 {
+		t.Errorf("page received %v, want [0 1]", got)
+	}
+
+	page(fw, `{"t":"call","id":2,"k":"tok","m":"Stream.Wait","a":[8],"cancel":true}`)
+	received(t, fw, func(m map[string]any) bool { return m["c"] == float64(8) && m["p"] == "ready" })
+	page(fw, `{"t":"cancel","id":2,"k":"tok"}`)
+	if err := wait.For(t, "the call to be canceled", s.stopped); !errors.Is(err, context.Canceled) {
+		t.Errorf("call context: %v", err)
+	}
+	if err := wait.For(t, "the late send", s.sent); !errors.Is(err, ErrChannelClosed) {
+		t.Errorf("Send after the call was canceled = %v", err)
 	}
 }
 
