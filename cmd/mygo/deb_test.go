@@ -4,7 +4,9 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"crypto/md5"
 	"encoding/json"
+	"fmt"
 	"image"
 	"image/png"
 	"io"
@@ -108,6 +110,56 @@ func TestDebCommand(t *testing.T) {
 		}
 		if entry := files["usr/share/applications/my-app.desktop"]; !strings.Contains(entry, "\nExec=/opt/my-app/my-app\n") {
 			t.Errorf("desktop entry:\n%s", entry)
+		}
+	}
+}
+
+func TestDebCopyright(t *testing.T) {
+	const pkg = "my-app"
+	const notice = "Copyright Example Authors\nPermission notice.\n"
+	const doc = "usr/share/doc/" + pkg + "/copyright"
+
+	c := &Config{root: t.TempDir(), Name: "My App", Version: "1.0.0"}
+	stage := t.TempDir()
+	for name, contents := range map[string]string{pkg: "binary", "notice.txt": notice, "empty.txt": "", "blank.txt": "  \n", "invalid.txt": "\xff"} {
+		if err := os.WriteFile(filepath.Join(stage, name), []byte(contents), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	app := []string{pkg, "notice.txt", "empty.txt", "blank.txt", "invalid.txt"}
+	original, err := writeDeb(c, stage, pkg, "amd64", app)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := debData(t, original)[doc]; ok {
+		t.Fatal("copyright installed without being configured")
+	}
+	c.Linux.CopyrightFile = "notice.txt"
+	deb, err := writeDeb(c, stage, pkg, "amd64", app)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	debEntries(t, deb, "data.tar.gz", func(hdr *tar.Header, content []byte) {
+		if strings.TrimPrefix(hdr.Name, "./") != doc {
+			return
+		}
+		found = true
+		if hdr.Typeflag != tar.TypeReg || hdr.Mode != 0o644 || string(content) != notice {
+			t.Errorf("copyright is not a verbatim, regular 0644 file: %+v", hdr)
+		}
+	})
+	if !found {
+		t.Fatal("missing Debian copyright")
+	}
+	sums := debMember(t, deb, "control.tar.gz")["md5sums"]
+	if !slices.Contains(strings.Split(sums, "\n"), fmt.Sprintf("%x  %s", md5.Sum([]byte(notice)), doc)) {
+		t.Fatal("copyright missing from package checksums")
+	}
+	for _, bad := range []string{"../notice.txt", "missing.txt", "empty.txt", "blank.txt", "invalid.txt"} {
+		c.Linux.CopyrightFile = bad
+		if _, err := writeDeb(c, stage, pkg, "amd64", app); err == nil {
+			t.Errorf("accepted invalid copyright resource %q", bad)
 		}
 	}
 }
