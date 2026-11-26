@@ -2,14 +2,17 @@ package text
 
 import (
 	"image"
+	"maps"
 	"math"
 	"runtime"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 	"unicode"
 	"unicode/utf16"
+	"weak"
 
 	"github.com/egoist/mygo/internal/scene"
 	"github.com/egoist/mygo/internal/wait"
@@ -904,6 +907,116 @@ func TestEllipsis(t *testing.T) {
 	if g := line.Glyphs[len(line.Glyphs)-1]; g.Runes != 0 || g.Cluster != line.End {
 		t.Errorf("the last glyph is %+v", g)
 	}
+}
+
+func TestEllipsisTooNarrow(t *testing.T) {
+	s := newSystem()
+	s.UseTruncateMiddle()
+	s.UseTruncateStart()
+	style := Style{Size: 14}
+	lineHeight := s.Layout(Params{Text: "some/path", Style: style}).Height
+	markW := s.Layout(Params{Text: "…", Style: style}).Width
+	dotsW := s.Layout(Params{Text: "...", Style: style}).Width
+	if markW <= 3 || dotsW <= 3 {
+		t.Fatalf("ellipsis widths %v and %v too small to test", markW, dotsW)
+	}
+
+	narrowCases := []struct {
+		name string
+		p    Params
+	}{
+		{"end", Params{Text: "some/path", Style: style, Width: 3, MaxLines: 1}},
+		{"custom", Params{Text: "some/path", Style: style, Width: dotsW - 1, MaxLines: 1, Ellipsis: "..."}},
+		{"middle", Params{Text: "some/path", Style: style, Width: 3, MaxLines: 1, TruncateMiddle: true}},
+		{"start", Params{Text: "some/path", Style: style, Width: 3, MaxLines: 1, TruncateStart: true}},
+		{"single_char", Params{Text: "W", Style: style, Width: 3, MaxLines: 1}},
+		{"multiline", Params{Text: "alpha\nbeta", Style: style, Width: 3, MaxLines: 1}},
+		{"indent_fills_width", Params{Text: "some/path", Style: style, Width: 20, Indent: 20, MaxLines: 1}},
+	}
+	for _, tc := range narrowCases {
+		t.Run(tc.name, func(t *testing.T) {
+			l := s.Layout(tc.p)
+			if !l.Truncated || len(l.Lines) != 1 || len(l.Lines[0].Glyphs) != 0 || l.Lines[0].Width != 0 || l.Width != tc.p.Indent {
+				t.Errorf("got truncated=%v lines=%d glyphs=%d lineW=%v layoutW=%v", l.Truncated, len(l.Lines), len(l.Lines[0].Glyphs), l.Lines[0].Width, l.Width)
+			}
+			if l.Height != lineHeight {
+				t.Errorf("height %v, want %v", l.Height, lineHeight)
+			}
+			_, _, ch := l.Caret(0)
+			if ch != lineHeight {
+				t.Errorf("caret height %v, want %v", ch, lineHeight)
+			}
+			if pos := l.PositionAt(0, 0); pos.Index != 0 {
+				t.Errorf("PositionAt(0, 0) = %+v", pos)
+			}
+			if rects := l.Selection(0, len(l.Runes)); len(rects) != 0 {
+				t.Errorf("Selection = %+v, want empty", rects)
+			}
+		})
+	}
+
+	// Wide enough for the ellipsis alone: keeps the ellipsis within Width.
+	fitW := markW + 0.5
+	for _, p := range []Params{
+		{Text: "some/path", Style: style, Width: fitW, MaxLines: 1},
+		{Text: "some/path", Style: style, Width: fitW, MaxLines: 1, TruncateMiddle: true},
+		{Text: "some/path", Style: style, Width: fitW, MaxLines: 1, TruncateStart: true},
+	} {
+		l := s.Layout(p)
+		if !l.Truncated || len(l.Lines) != 1 || len(l.Lines[0].Glyphs) == 0 || l.Lines[0].Width > fitW {
+			t.Errorf("at %v (middle=%v start=%v): truncated=%v glyphs=%d width=%v", fitW, p.TruncateMiddle, p.TruncateStart, l.Truncated, len(l.Lines[0].Glyphs), l.Lines[0].Width)
+		}
+	}
+
+	// Single wide character narrower than itself but wide enough for the ellipsis.
+	if wW := s.Layout(Params{Text: "W", Style: style}).Width; wW > fitW+0.5 {
+		l := s.Layout(Params{Text: "W", Style: style, Width: fitW, MaxLines: 1})
+		if !l.Truncated || len(l.Lines[0].Glyphs) == 0 || l.Lines[0].Width > fitW || l.Lines[0].Glyphs[0].Runes != 0 {
+			t.Errorf("single wide char at %v: truncated=%v width=%v glyphs=%+v", fitW, l.Truncated, l.Lines[0].Width, l.Lines[0].Glyphs)
+		}
+	}
+
+	// Ellipsis inheriting a larger span's font size must not overflow Width.
+	t.Run("large_span_ellipsis_fits", func(t *testing.T) {
+		for _, tc := range []struct {
+			name string
+			p    Params
+		}{
+			{"end", Params{Text: "iiii", Style: Style{Size: 14}, Spans: EncodeSpans([]Span{{End: 4, Size: 48}}), Width: 24, MaxLines: 1}},
+			{"middle", Params{Text: "iiii", Style: Style{Size: 14}, Spans: EncodeSpans([]Span{{End: 4, Size: 96}}), Width: 52, MaxLines: 1, TruncateMiddle: true}},
+			{"start", Params{Text: "iiii", Style: Style{Size: 14}, Spans: EncodeSpans([]Span{{End: 4, Size: 96}}), Width: 52, MaxLines: 1, TruncateStart: true}},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				l := s.Layout(tc.p)
+				if !l.Truncated || len(l.Lines) != 1 || l.Lines[0].Width > tc.p.Width+1e-3 {
+					t.Errorf("large span at width %v: truncated=%v width=%v glyphs=%+v", tc.p.Width, l.Truncated, l.Lines[0].Width, l.Lines[0].Glyphs)
+				}
+			})
+		}
+	})
+
+	// KeepSpaces counts trailing spaces toward single-line overflow and inside truncation.
+	t.Run("keep_spaces_overflow", func(t *testing.T) {
+		full := s.Layout(Params{Text: "a    ", Style: style, KeepSpaces: true}).Width
+		w := full - 1
+		l := s.Layout(Params{Text: "a    ", Style: style, Width: w, MaxLines: 1, KeepSpaces: true})
+		if !l.Truncated || len(l.Lines) != 1 || l.Lines[0].Width > w+1e-3 {
+			t.Errorf("KeepSpaces at width %v (full %v): truncated=%v width=%v", w, full, l.Truncated, l.Lines[0].Width)
+		}
+		spans := EncodeSpans([]Span{{End: 9, Size: 18}})
+		for _, tc := range []struct {
+			name string
+			p    Params
+		}{
+			{"start", Params{Text: "iiiiiiii ", Style: style, Spans: spans, Width: 20, MaxLines: 1, KeepSpaces: true, TruncateStart: true}},
+			{"middle", Params{Text: "iiiiiiii ", Style: style, Spans: spans, Width: 28, MaxLines: 1, KeepSpaces: true, TruncateMiddle: true}},
+		} {
+			l := s.Layout(tc.p)
+			if !l.Truncated || len(l.Lines) != 1 || l.Lines[0].Width > tc.p.Width+1e-3 {
+				t.Errorf("KeepSpaces %s at width %v: truncated=%v width=%v", tc.name, tc.p.Width, l.Truncated, l.Lines[0].Width)
+			}
+		}
+	})
 }
 
 // checkMiddleCut returns the runes a line that TruncateMiddle cut keeps
@@ -2000,6 +2113,111 @@ func TestFontOfKeptLayoutOutlivesFlush(t *testing.T) {
 		s.EndFrame()
 		return e.released[native]
 	})
+}
+
+// closingEngine is a releasingEngine that closes, as the system's engines
+// do (engineCloser), recording in rec, which the cleanup goroutines that
+// close it and release its fonts write.
+type closingEngine struct {
+	releasingEngine
+	rec *closeRecord
+}
+
+type closeRecord struct {
+	mu       sync.Mutex
+	closed   bool
+	released map[uintptr]bool
+}
+
+func (r *closeRecord) release(native uintptr) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.released[native] = true
+}
+
+func (r *closeRecord) read() (closed bool, released map[uintptr]bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.closed, maps.Clone(r.released)
+}
+
+func (e *closingEngine) releaseFonts() { e.releaseDead(e.rec.release) }
+
+func (e *closingEngine) close() {
+	e.forgetFonts()
+	e.closeFonts(e.rec.release)
+	e.rec.mu.Lock()
+	e.rec.closed = true
+	e.rec.mu.Unlock()
+}
+
+// TestNewSystemClosesEngine drops a System New made, as a Tester's
+// window does (#1902): its engine closes once the System is unreachable,
+// and the native fonts of its Fonts go with it, or once nothing refers to
+// them, those it forgot before as those it held; a layout kept past the
+// System keeps its Font's until it goes too.
+func TestNewSystemClosesEngine(t *testing.T) {
+	rec := &closeRecord{released: map[uintptr]bool{}}
+	var kept *Layout
+	var made int
+	func() {
+		s, e := New(), &closingEngine{rec: rec}
+		s.start(e)
+		defer func() { made = int(e.made) }()
+		kept = s.Layout(Params{Text: "Kept", Style: Style{Size: 13}})
+		for i := 0; e.fontCount() <= maxFonts; i++ {
+			s.Layout(Params{Text: "Hi", Style: Style{Size: 20 + float32(i)/10}})
+		}
+		s.EndFrame()
+		// A font the engine holds as it closes.
+		s.Layout(Params{Text: "Held", Style: Style{Size: 14}})
+	}()
+	native := kept.Lines[0].Glyphs[0].Font.native
+	wait.Until(t, "the engine of the unreachable System closed", func() bool {
+		runtime.GC()
+		closed, _ := rec.read()
+		return closed
+	})
+	wait.Until(t, "the fonts nothing refers to released", func() bool {
+		runtime.GC()
+		_, released := rec.read()
+		return len(released) == made-1
+	})
+	if _, released := rec.read(); released[native] {
+		t.Fatal("the font of the layout kept past its System was released")
+	}
+	runtime.KeepAlive(kept)
+	wait.Until(t, "the kept layout's font released", func() bool {
+		runtime.GC()
+		_, released := rec.read()
+		return released[native]
+	})
+}
+
+// TestNewSystemsUnreachable drops Systems New made that laid out text and
+// rasterized glyphs with the system's engine: each becomes unreachable,
+// and its cleanup closes the engine, which must not refer to it (#1902);
+// a layout kept past its System keeps its Fonts.
+func TestNewSystemsUnreachable(t *testing.T) {
+	var systems []weak.Pointer[System]
+	var kept []*Layout
+	for range 8 {
+		s := New()
+		l := s.Layout(Params{Text: "Hello, world", Style: Style{Size: 13}})
+		g := l.Lines[0].Glyphs[0]
+		s.Glyph(g.Font, g.ID, 2, 0, 0, false)
+		systems = append(systems, weak.Make(s))
+		kept = append(kept, l)
+	}
+	wait.Until(t, "the Systems New made unreachable", func() bool {
+		runtime.GC()
+		return !slices.ContainsFunc(systems, func(w weak.Pointer[System]) bool { return w.Value() != nil })
+	})
+	for _, l := range kept {
+		if f := l.Lines[0].Glyphs[0].Font; f == nil || f.Ascent <= 0 {
+			t.Fatalf("the font of a layout kept past its System is %+v", f)
+		}
+	}
 }
 
 // TestPlacement checks that glyphs go to the positions within a pixel the

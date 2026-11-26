@@ -108,6 +108,11 @@ type host interface {
 // the view function, lays them out, paints them and routes input to the
 // elements of the last frame. Main thread only, except where noted.
 type engine struct {
+	// corners returns the radius, in DIPs, the window's frames are cut to
+	// where the system does not round its corners
+	// (surface.Conn.ContentCorners), 0 while they are square. nil for
+	// every other window.
+	corners func() float64
 	// inlineRects is placeInline's scratch, kept from frame to frame.
 	inlineRects []text.Rect
 	// byPosition holds the keys whose press stood for its physical key
@@ -410,6 +415,9 @@ type engine struct {
 	// value, which takes the press as it moves (dragMove), or 0.
 	pressDragger uint64
 	focused      uint64
+	// spacePressed is the focused button that Space holds down, which
+	// it clicks as it goes up (keySpacePress), or 0.
+	spacePressed uint64
 	// texts are selectable paragraphs in build order; selection spans those
 	// of one Selectable container (textselection.go).
 	texts        []*state
@@ -717,6 +725,9 @@ func newRuntime(view func(*context), h host) *engine {
 		statsThreshold, statsOn = frameStatsSetting(os.Getenv("MYGO_FRAME_STATS"))
 	}
 	rt := &engine{view: view, host: h, text: h.textSystem(), states: map[uint64]*state{}, windowFocused: true}
+	if c, ok := h.(*windowHost); ok && c.conn != nil {
+		rt.corners = c.conn.ContentCorners
+	}
 	rt.c.rt = rt
 	rt.owner = weak.Make(rt)
 	rt.arena = &elementOwner{rt: rt}
@@ -1733,6 +1744,9 @@ func (rt *engine) commitElement(e *node, clip Rect, hidden bool) {
 		clip = rt.lift()
 	}
 	s.x, s.y, s.w, s.h = e.x, e.y, e.w, e.h
+	// Its own text cut, unless hidden; text inside it adds to it as it
+	// commits below.
+	s.truncated = e.kind == kindText && e.tl != nil && e.tl.Truncated && !rt.commitHidden
 	if e.parent != nil {
 		s.parent = e.parent.id
 	} else {
@@ -1933,6 +1947,12 @@ func (rt *engine) commitElement(e *node, clip Rect, hidden bool) {
 	}
 	if lifting {
 		rt.lift()
+	}
+	if s.truncated && e.parent != nil && e != e.c.overlay {
+		// Text cut inside the element, as a button's label, cuts its own
+		// (Truncated); an overlay's popups are no part of what they are
+		// attached to.
+		e.parent.st.truncated = true
 	}
 	e.setInk(vis)
 	if e.hidden {
