@@ -14,11 +14,11 @@ type searchRunner interface {
 
 type searchRun struct {
 	cancel context.CancelFunc
-	done   chan struct{}
 }
 
 type searchOwner struct {
 	mu     sync.Mutex
+	wg     sync.WaitGroup
 	run    *searchRun
 	runner searchRunner
 	state  string
@@ -40,10 +40,12 @@ func (o *searchOwner) start(connect func(context.Context) (searchRunner, error),
 		return false
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	r := &searchRun{cancel: cancel, done: make(chan struct{})}
+	r := &searchRun{cancel: cancel}
 	o.run, o.state = r, "Connecting"
+	o.wg.Add(1)
 	o.mu.Unlock()
 	go func() {
+		defer o.wg.Done()
 		defer func() {
 			o.mu.Lock()
 			if o.runner != nil {
@@ -54,7 +56,6 @@ func (o *searchOwner) start(connect func(context.Context) (searchRunner, error),
 				o.state = "Disconnected"
 			}
 			o.run = nil
-			close(r.done)
 			o.mu.Unlock()
 			cancel()
 			if notify != nil {
@@ -101,10 +102,5 @@ func (o *searchOwner) stop() {
 }
 
 func (o *searchOwner) wait() {
-	o.mu.Lock()
-	r := o.run
-	o.mu.Unlock()
-	if r != nil {
-		<-r.done
-	}
+	o.wg.Wait()
 }
