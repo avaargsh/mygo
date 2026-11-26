@@ -222,6 +222,12 @@ func (s *shell) renderContent(c *ui.Context, snapshot core.WorkspaceSnapshot, pa
 		} else {
 			ui.Text(c, "Terminal session unavailable")
 		}
+	case "search":
+		if f, ok := session.Value.(*searchSession); ok && f != nil {
+			s.renderSearch(c, snapshot, paneID, f)
+		} else {
+			ui.Text(c, "Search session unavailable")
+		}
 	case "files":
 		if files, ok := session.Value.(*filesSession); ok && files != nil {
 			s.renderFiles(c, files)
@@ -329,6 +335,9 @@ func main() {
 			}
 		})
 		s.window.OnClosed(func() {
+			if search := s.searchSession(); search != nil {
+				search.stop()
+			}
 			s.closeChats()
 			if session := s.content.Session("browser"); session != nil {
 				if browser, ok := session.Value.(*browserSession); ok && browser != nil {

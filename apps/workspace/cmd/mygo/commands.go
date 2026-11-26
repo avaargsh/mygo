@@ -26,6 +26,7 @@ func (s *shell) commandRegistry() *core.CommandRegistry {
 		{"notes", "Notes", "markdown document 笔记"},
 		{"browser", "Browser", "web url 浏览器"},
 		{"terminal", "Terminal", "shell 终端"},
+		{"search", "Search", "xerj passages files 搜索 检索"},
 		{"files", "Files", "folder 文件"},
 		{"chat", "Chat", "llm model 对话 聊天"},
 	} {

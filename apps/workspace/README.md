@@ -390,3 +390,18 @@ repository's JavaScript build and desktop runtime dependencies. It does not
 replace the existing full cross-platform CI or actual desktop/WebView/PTY
 smoke verification. Workflow YAML was parsed and structurally checked
 locally; a successful Actions run is not yet established.
+
+## Search an existing local XERJ index
+
+Open **Search** in the toolbar or choose **Open Search** from Commands.
+Enter the numeric loopback HTTP origin of a running XERJ node (default
+`http://127.0.0.1:9200`), its exact index slug (not a project or folder
+name), and search text. Choose **Find passages**. Results show a source
+path, a line when supplied and supported by the passage offset, and a
+plain-text excerpt. A source is a label, not a link or a verified citation.
+
+See [the XERJ adapter guide](../../plugins/xerj/README.md) to prepare a local
+node and look up its indexed slug. MyGo does not install or start XERJ,
+scan folders, create indices, contact a remote node, or send results to a
+model in this first search view. Connection settings, queries and results
+are not written to workspace state. A saved Search tab reopens idle.
