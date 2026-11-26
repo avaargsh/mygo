@@ -27,6 +27,7 @@ func (s *shell) commandRegistry() *core.CommandRegistry {
 		{"browser", "Browser", "web url 浏览器"},
 		{"terminal", "Terminal", "shell 终端"},
 		{"files", "Files", "folder 文件"},
+		{"search", "Search", "xerj fixture retrieval 检索 搜索"},
 		{"chat", "Chat", "llm model 对话 聊天"},
 	} {
 		register(core.Command{ID: "content." + item.id, Title: "Open " + item.title, Keywords: item.keywords, Run: func() { s.open(item.id) }})
