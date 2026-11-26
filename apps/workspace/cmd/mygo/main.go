@@ -2,7 +2,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -15,6 +14,8 @@ import (
 )
 
 type shell struct {
+	host            *workspaceHost
+	profile         core.WorkspaceProfile
 	workspace       *core.Workspace
 	window          *mygo.Window
 	content         *core.ContentManager
@@ -271,92 +272,56 @@ func main() {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		log.Fatal(err)
 	}
-	path := filepath.Join(dir, "state.json")
-	w, theme, err := core.LoadState(path)
-	fresh := errors.Is(err, os.ErrNotExist)
-	if fresh {
-		w, err = core.NewWorkspace("pane-root")
-		theme = "system"
-	}
+	h, err := newWorkspaceHost(dir)
 	if err != nil {
-		log.Fatalf("Cannot restore workspace %s (original file preserved): %v", path, err)
+		log.Fatalf("Cannot open Workspace (existing files preserved): %v", err)
 	}
-	content, err := builtInContent(dir)
-	if err != nil {
-		log.Fatal(err)
-	}
-	s := &shell{workspace: w, content: content, statePath: path, theme: theme}
-	for _, pane := range w.Snapshot().Panes {
-		for _, tab := range pane.Tabs {
-			if _, err := restoreContentSession(content, tab.SessionID); err != nil {
-				s.status = "Restore content failed: " + err.Error()
-				log.Print(s.status)
-			}
-		}
-	}
-	applyTheme(theme)
-	if fresh {
-		s.open("home")
-		s.dirty = false // The default Home tab is recreated on an untouched first run.
-	}
+	applyTheme(h.current.theme)
 	mygo.App.OnBeforeQuit(func(e *mygo.QuitEvent) {
 		if e.SessionEnding {
-			s.sessionEnding = true
+			for _, s := range h.loaded {
+				s.sessionEnding = true
+			}
 		}
 	})
 	mygo.App.WhenReady(func() {
-		s.window = mygo.NewWindow(mygo.WindowOptions{
+		h.window = mygo.NewWindow(mygo.WindowOptions{
 			Title:   "MyGo Workspace",
 			Width:   1000,
 			Height:  680,
-			Content: ui.View(s.view),
+			Content: ui.View(h.view),
 		})
-		s.window.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
+		h.current.window = h.window
+		h.window.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
 			{Role: mygo.RoleAppMenu},
 			{Label: "File", Submenu: []*mygo.MenuItem{
 				{Label: "Save workspace", Accelerator: "CmdOrCtrl+S", Click: func(*mygo.MenuItem, *mygo.Window) {
-					s.runCommand("workspace.save")
-					s.window.Invalidate()
+					h.current.runCommand("workspace.save")
+					h.window.Invalidate()
 				}},
 				mygo.Separator(),
 				{Label: "Close window", Accelerator: "CmdOrCtrl+W", Click: func(*mygo.MenuItem, *mygo.Window) {
-					s.window.Close()
+					h.window.Close()
 				}},
 			}},
 			{Role: mygo.RoleEditMenu},
 			{Label: "View", Submenu: []*mygo.MenuItem{
 				{Label: "Split right", Accelerator: "CmdOrCtrl+Shift+E", Click: func(*mygo.MenuItem, *mygo.Window) {
-					s.runCommand("layout.split-right")
-					s.window.Invalidate()
+					h.current.runCommand("layout.split-right")
+					h.window.Invalidate()
 				}},
 			}},
 			{Label: "Window", Submenu: []*mygo.MenuItem{{Role: mygo.RoleMinimize}}},
 		}))
-		s.window.OnClose(func(e *mygo.CloseEvent) {
-			if !s.confirmClose(mygo.Dialog.Message) {
+		h.window.OnClose(func(e *mygo.CloseEvent) {
+			if !h.confirmClose(mygo.Dialog.Message) {
 				e.PreventDefault()
-				s.window.Invalidate()
+				h.window.Invalidate()
 			}
 		})
-		s.window.OnClosed(func() {
-			if search := s.searchSession(); search != nil {
-				search.stop()
-			}
-			s.closeChats()
-			if session := s.content.Session("browser"); session != nil {
-				if browser, ok := session.Value.(*browserSession); ok && browser != nil {
-					s.releaseBrowser(browser)
-				}
-			}
-			if f := s.filesSession(); f != nil {
-				if err := f.close(); err != nil {
-					log.Print("files shutdown: ", err)
-				}
-			}
-			if t := s.terminalSession(); t != nil {
-				if err := t.Stop(); err != nil {
-					log.Print("terminal shutdown: ", err)
-				}
+		h.window.OnClosed(func() {
+			for _, s := range h.loaded {
+				s.closeContent()
 			}
 		})
 	})

@@ -49,8 +49,8 @@ link by itself is not an installer.
 
 ## Run from the repository root
 
-Requires the toolchain specified in root go.mod (Go 1.27.3 at the
-foundation baseline) and the platform prerequisites in docs/getting-started.md.
+Requires the toolchain specified in the root go.mod and the platform
+prerequisites in docs/getting-started.md.
 
     go test ./apps/workspace/core
     go test -race ./apps/workspace/core
@@ -96,6 +96,24 @@ untrusted page options; it does not establish browser storage isolation.
 The [Content Lifecycle Contract](content-lifecycle.md) defines the shared
 ownership and restore rules for providers, instances, sessions, views and executions.
 
+## Create and switch local workspaces
+
+Choose **Workspaces** in the window header, or run **Switch workspace** from
+Commands. Enter a name and choose **Create workspace** to open it. Select
+another workspace from the same picker to switch back.
+
+Each workspace has its own layout, theme, Notes, Chat archives and live
+sessions. Switching retains the previous workspace's running tasks and unsaved
+edits in memory. Closing the window checks unsaved changes in every loaded
+workspace. **Save workspace** saves the current layout, and **Save note** saves
+the current workspace's note.
+
+On restart, the last selected workspace opens with its saved layout. Existing
+files under `MyGoWorkspace` belong to **Default**. Named workspaces use private
+directories under `MyGoWorkspace/workspaces/<id>`. Names are for display, and
+stable IDs select storage and the named Browser partitions. The local picker
+supports creating up to 32 workspaces including Default.
+
 ## Architecture and status
 
 - core owns tab identity, ordering and active selection; a tab is a view
@@ -112,8 +130,9 @@ ownership and restore rules for providers, instances, sessions, views and execut
   invalid or unknown versions are rejected. The desktop state uses validated
   versioned JSON, a 4 MiB cap and same-directory temp-file replacement;
   explicit Save avoids synchronous disk writes on each resize frame.
-  This is a single-workspace bootstrap store, not SQLite or a concurrent
-  multi-instance store. Power-loss durability across platforms is unverified.
+  Each workspace uses its own snapshot and content files. A workspace's
+  content files assume a single writing app instance. Power-loss durability
+  across platforms is unverified.
   The shell uses native split handles and moves tabs to the next pane in tree order.
 - Workspace-only theme tokens use native light/dark/system appearance, theme
   surface/border colors, shared spacing, radius and a green accent.
@@ -169,7 +188,7 @@ On Go 1.23.2 the isolated, standard-library-only core passed 21 tests
 failed compilation before the implementation. The two new core file
 blob hashes match the locally tested files. Native shell integration and
 its tests were committed but have not been compiled or executed locally.
-The root build still needs Go 1.27.3+ and a reachable dependency source.
+The root build needs the toolchain specified in go.mod and a reachable dependency source.
 
 ## Browser (M2 second slice)
 
