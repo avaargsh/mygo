@@ -133,7 +133,7 @@ func (s *ChatSession) RestoreArchive(path string) (string, string, error) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.cancel != nil || len(s.turns) != 0 {
+	if s.active != nil || len(s.turns) != 0 {
 		return "", "", errors.New("restore requires an empty idle chat")
 	}
 	s.turns = restored.turns

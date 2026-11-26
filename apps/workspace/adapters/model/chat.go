@@ -44,13 +44,35 @@ type StreamFunc func(context.Context, string, []Message, func(string) error) (Co
 type ChatSession struct {
 	mu     sync.Mutex
 	turns  []ChatTurn
-	cancel context.CancelFunc
+	active *ChatRun
+}
+
+// ChatRun identifies one accepted generation. Its outcome survives clearing
+// the conversation. State and Cancel may be called concurrently.
+type ChatRun struct {
+	session *ChatSession
+	cancel  context.CancelFunc
+	done    chan struct{}
+	state   ChatState // guarded by session.mu
+}
+
+func (r *ChatRun) State() ChatState {
+	r.session.mu.Lock()
+	defer r.session.mu.Unlock()
+	return r.state
+}
+
+// Cancel requests stop only if this generation is still running.
+func (r *ChatRun) Cancel() bool {
+	r.session.mu.Lock()
+	defer r.session.mu.Unlock()
+	return r.session.cancelRunLocked(r)
 }
 
 func (s *ChatSession) Snapshot() ChatSnapshot {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return ChatSnapshot{Turns: append([]ChatTurn(nil), s.turns...), Active: s.cancel != nil}
+	return ChatSnapshot{Turns: append([]ChatTurn(nil), s.turns...), Active: s.active != nil}
 }
 
 // Start adds one user turn and starts one worker. Only completed prior turns
@@ -62,6 +84,16 @@ func (s *ChatSession) Start(parent context.Context, stream StreamFunc, key, prom
 // StartWithExcerpt includes optional reference text in this request's final
 // user message only. The stored turn and future requests keep the original prompt.
 func (s *ChatSession) StartWithExcerpt(parent context.Context, stream StreamFunc, key, prompt, excerpt string, notify func()) (<-chan struct{}, error) {
+	run, err := s.StartRun(parent, stream, key, prompt, excerpt, notify)
+	if err != nil {
+		return nil, err
+	}
+	return run.done, nil
+}
+
+// StartRun starts a generation and returns its own status and cancellation handle.
+// An optional excerpt is scoped to this request.
+func (s *ChatSession) StartRun(parent context.Context, stream StreamFunc, key, prompt, excerpt string, notify func()) (*ChatRun, error) {
 	if stream == nil || strings.TrimSpace(prompt) == "" || !utf8.ValidString(prompt) || len(prompt) > maxChatPromptBytes {
 		return nil, errors.New("invalid chat prompt or stream")
 	}
@@ -81,7 +113,7 @@ func (s *ChatSession) StartWithExcerpt(parent context.Context, stream StreamFunc
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.cancel != nil {
+	if s.active != nil {
 		return nil, errors.New("chat generation already active")
 	}
 	if len(s.turns) >= maxChatTurns {
@@ -100,17 +132,17 @@ func (s *ChatSession) StartWithExcerpt(parent context.Context, stream StreamFunc
 	}
 	messages = append(messages, Message{Role: "user", Content: outgoing})
 	ctx, cancel := context.WithCancel(parent)
-	s.cancel = cancel
+	run := &ChatRun{session: s, cancel: cancel, done: make(chan struct{}), state: ChatRunning}
+	s.active = run
 	index := len(s.turns)
 	s.turns = append(s.turns, ChatTurn{User: prompt, State: ChatRunning})
-	done := make(chan struct{})
-	go s.generate(ctx, cancel, stream, key, messages, index, notify, done)
-	return done, nil
+	go s.generate(ctx, run, stream, key, messages, index, notify)
+	return run, nil
 }
 
-func (s *ChatSession) generate(ctx context.Context, cancel context.CancelFunc, stream StreamFunc, key string, messages []Message, index int, notify func(), done chan struct{}) {
-	defer close(done)
-	defer cancel()
+func (s *ChatSession) generate(ctx context.Context, run *ChatRun, stream StreamFunc, key string, messages []Message, index int, notify func()) {
+	defer close(run.done)
+	defer run.cancel()
 	var text strings.Builder
 	var rejected error
 	result, err := stream(ctx, key, messages, func(delta string) error {
@@ -149,7 +181,9 @@ func (s *ChatSession) generate(ctx context.Context, cancel context.CancelFunc, s
 	default:
 		turn.State, turn.FinishReason = ChatCompleted, result.FinishReason
 	}
-	s.cancel = nil
+	run.state = turn.State
+	run.cancel = nil
+	s.active = nil
 	s.mu.Unlock()
 	if notify != nil {
 		notify()
@@ -160,18 +194,23 @@ func (s *ChatSession) generate(ctx context.Context, cancel context.CancelFunc, s
 func (s *ChatSession) Cancel() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.cancel == nil || s.turns[len(s.turns)-1].State == ChatStopping {
+	return s.cancelRunLocked(s.active)
+}
+
+func (s *ChatSession) cancelRunLocked(run *ChatRun) bool {
+	if run == nil || s.active != run || run.state == ChatStopping {
 		return false
 	}
+	run.state = ChatStopping
 	s.turns[len(s.turns)-1].State = ChatStopping
-	s.cancel()
+	run.cancel()
 	return true
 }
 
 func (s *ChatSession) Clear() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.cancel != nil {
+	if s.active != nil {
 		return errors.New("cannot clear an active chat")
 	}
 	s.turns = nil

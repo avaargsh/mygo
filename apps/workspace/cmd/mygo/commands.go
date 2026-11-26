@@ -29,6 +29,7 @@ func (s *shell) commandRegistry() *core.CommandRegistry {
 		{"search", "Search", "xerj passages files 搜索 检索"},
 		{"files", "Files", "folder 文件"},
 		{"chat", "Chat", "llm model 对话 聊天"},
+		{"runs", "Run History", "chat generation status 运行 记录"},
 	} {
 		register(core.Command{ID: "content." + item.id, Title: "Open " + item.title, Keywords: item.keywords, Run: func() { s.open(item.id) }})
 	}

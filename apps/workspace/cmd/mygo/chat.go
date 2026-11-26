@@ -60,11 +60,13 @@ func (s *shell) sendChat(ch *chatViewSession) {
 	if ch.searchExcerpt != nil {
 		excerpt = ch.searchExcerpt.text
 	}
-	if _, err := ch.chat.StartWithExcerpt(context.Background(), stream, ch.apiKey, ch.draft, excerpt, nil); err != nil {
+	run, err := ch.chat.StartRun(context.Background(), stream, ch.apiKey, ch.draft, excerpt, nil)
+	if err != nil {
 		client.Close()
 		s.status = err.Error()
 		return
 	}
+	s.recordChatRun(chatIdentity(ch), run)
 	ch.boundEndpoint, ch.boundModel = ch.endpoint, ch.modelName
 	ch.apiKey, ch.draft = "", ""
 	ch.searchExcerpt, ch.searchExcerptOpen = nil, false
