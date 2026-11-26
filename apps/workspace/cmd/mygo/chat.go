@@ -15,16 +15,18 @@ import (
 // chatViewSession owns UI drafts; only model.ChatSession crosses threads.
 // Connection details are archived only explicitly; credentials and drafts never are.
 type chatViewSession struct {
-	sessionID string
-	chat          model.ChatSession
-	endpoint      string
-	modelName     string
-	apiKey        string
-	draft         string
-	boundEndpoint string
-	boundModel    string
-	archiveConfirm bool
+	sessionID         string
+	chat              model.ChatSession
+	endpoint          string
+	modelName         string
+	apiKey            string
+	draft             string
+	boundEndpoint     string
+	boundModel        string
+	archiveConfirm    bool
 	confirmConnection bool
+	searchExcerpt     *chatSearchExcerpt
+	searchExcerptOpen bool
 }
 
 func (s *shell) chatSession() *chatViewSession {
@@ -54,13 +56,18 @@ func (s *shell) sendChat(ch *chatViewSession) {
 		defer client.Close()
 		return client.Stream(ctx, key, messages, emit)
 	}
-	if _, err := ch.chat.Start(context.Background(), stream, ch.apiKey, ch.draft, nil); err != nil {
+	var excerpt string
+	if ch.searchExcerpt != nil {
+		excerpt = ch.searchExcerpt.text
+	}
+	if _, err := ch.chat.StartWithExcerpt(context.Background(), stream, ch.apiKey, ch.draft, excerpt, nil); err != nil {
 		client.Close()
 		s.status = err.Error()
 		return
 	}
 	ch.boundEndpoint, ch.boundModel = ch.endpoint, ch.modelName
 	ch.apiKey, ch.draft = "", ""
+	ch.searchExcerpt, ch.searchExcerptOpen = nil, false
 	s.status = ""
 }
 
@@ -71,6 +78,7 @@ func (s *shell) clearChat(ch *chatViewSession) {
 	}
 	ch.boundEndpoint, ch.boundModel, ch.apiKey = "", "", ""
 	ch.draft = ""
+	ch.searchExcerpt, ch.searchExcerptOpen = nil, false
 	ch.archiveConfirm, ch.confirmConnection = false, false
 	s.status = ""
 }
@@ -102,9 +110,12 @@ func (s *shell) renderChat(c *ui.Context, snapshot core.WorkspaceSnapshot, paneI
 		}
 		ui.TextArea(c.Key("chat-message"), &ch.draft).Label("Message").Placeholder("Write a message…").Height(64).MinHeight(48).MaxLength(8192)
 		ui.TextInput(c.Key("chat-credential"), &ch.apiKey).Password().MaxLength(8192).Label("API key (optional; cleared on send)")
-		ui.Text(c, "Send shares this chat only.").FontSize(fontSmall)
-		ui.Row(c).Gap(spaceControl).Children(func() {
-			ui.Button(c, "Send message").Disabled(ch.confirmConnection || strings.TrimSpace(ch.draft) == "").OnClick(func() { s.sendChat(ch) })
+		sendLabel := "Send message"
+		if ch.searchExcerpt != nil {
+			sendLabel = "Send message with excerpt"
+		}
+		ui.Row(c).Gap(spaceControl).Wrap().Children(func() {
+			ui.Button(c, sendLabel).Disabled(ch.confirmConnection || strings.TrimSpace(ch.draft) == "").OnClick(func() { s.sendChat(ch) })
 			ui.Button(c, "Clear conversation").Disabled(len(state.Turns) == 0).OnClick(func() { s.clearChat(ch) })
 		})
 		ui.Row(c).Gap(spaceControl).Wrap().Children(func() {
@@ -119,9 +130,10 @@ func (s *shell) renderChat(c *ui.Context, snapshot core.WorkspaceSnapshot, paneI
 			}
 			ui.Button(c, "Load chat archive").Disabled(!canLoadChatArchive(ch) || s.statePath == "").OnClick(func() { s.loadChatArchive(ch) })
 		})
+		s.renderChatSearchExcerpt(c, ch)
 	}
 	ui.Scroll(c).Grow(1).MinHeight(0).Children(func() {
-		ui.Text(c, "Send includes your prompt and completed chat history only. Local archives are explicit, plaintext, and exclude credentials and unsent drafts.").FontSize(fontSmall)
+		ui.Text(c, "Send includes your prompt, completed chat history, and any attached excerpt. Chat archives are explicit local plaintext and exclude credentials and unsent drafts.").FontSize(fontSmall)
 		ui.Column(c).Gap(spaceSection).Children(func() {
 			for i, turn := range state.Turns {
 				ui.Column(c.Key("turn-"+strconv.Itoa(i))).Gap(4).Children(func() {
@@ -152,7 +164,7 @@ func (s *shell) renderChatActivity(c *ui.Context, snapshot core.WorkspaceSnapsho
 
 func canLoadChatArchive(ch *chatViewSession) bool {
 	snapshot := ch.chat.Snapshot()
-	return !snapshot.Active && len(snapshot.Turns) == 0 && ch.draft == "" && ch.apiKey == ""
+	return !snapshot.Active && len(snapshot.Turns) == 0 && ch.draft == "" && ch.apiKey == "" && ch.searchExcerpt == nil
 }
 
 func (s *shell) saveChatArchive(ch *chatViewSession) {
@@ -171,7 +183,7 @@ func (s *shell) saveChatArchive(ch *chatViewSession) {
 func (s *shell) loadChatArchive(ch *chatViewSession) {
 	session := s.content.Session(chatIdentity(ch))
 	if session == nil || session.Value != ch || !canLoadChatArchive(ch) || s.statePath == "" {
-		s.status = "Clear the conversation, draft and credential before loading"
+		s.status = "Clear the conversation, draft, credential and excerpt before loading"
 		return
 	}
 	endpoint, modelName, err := ch.chat.RestoreArchive(s.chatArchivePath(ch))

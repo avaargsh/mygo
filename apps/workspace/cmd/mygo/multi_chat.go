@@ -80,6 +80,7 @@ func (s *shell) closeChats() {
 		if ch, ok := session.Value.(*chatViewSession); ok && ch != nil {
 			ch.chat.Cancel()
 			ch.apiKey = ""
+			ch.searchExcerpt, ch.searchExcerptOpen = nil, false
 		}
 	}
 }

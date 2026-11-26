@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -168,5 +169,28 @@ func TestChatSessionRejectedDeltaCannotBecomeCompleted(t *testing.T) {
 	turn := s.Snapshot().Turns[0]
 	if turn.State != ChatFailed || turn.Assistant != "valid" || turn.FinishReason != "" {
 		t.Fatalf("rejected delta was treated as completion: %+v", turn)
+	}
+}
+
+func TestChatSessionRejectsExcerptOutsidePromptBudget(t *testing.T) {
+	stream := func(_ context.Context, _ string, _ []Message, _ func(string) error) (Completion, error) {
+		t.Error("invalid excerpt started a request")
+		return Completion{}, errors.New("unexpected request")
+	}
+	for _, tc := range []struct {
+		name, prompt, excerpt string
+	}{
+		{"oversized combined message", strings.Repeat("a", maxChatPromptBytes), "reference"},
+		{"invalid UTF-8", "hello", string([]byte{0xff})},
+		{"blank excerpt", "hello", "  "},
+		{"empty prompt", "  ", "reference"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var chat ChatSession
+			done, err := chat.StartWithExcerpt(t.Context(), stream, "", tc.prompt, tc.excerpt, nil)
+			if err == nil || done != nil || len(chat.Snapshot().Turns) != 0 {
+				t.Fatal("invalid excerpt or prompt changed the session")
+			}
+		})
 	}
 }

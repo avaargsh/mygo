@@ -56,8 +56,25 @@ func (s *ChatSession) Snapshot() ChatSnapshot {
 // Start adds one user turn and starts one worker. Only completed prior turns
 // are included in the outgoing request. Failed and canceled turns remain local.
 func (s *ChatSession) Start(parent context.Context, stream StreamFunc, key, prompt string, notify func()) (<-chan struct{}, error) {
+	return s.StartWithExcerpt(parent, stream, key, prompt, "", notify)
+}
+
+// StartWithExcerpt includes optional reference text in this request's final
+// user message only. The stored turn and future requests keep the original prompt.
+func (s *ChatSession) StartWithExcerpt(parent context.Context, stream StreamFunc, key, prompt, excerpt string, notify func()) (<-chan struct{}, error) {
 	if stream == nil || strings.TrimSpace(prompt) == "" || !utf8.ValidString(prompt) || len(prompt) > maxChatPromptBytes {
 		return nil, errors.New("invalid chat prompt or stream")
+	}
+	outgoing := prompt
+	if excerpt != "" {
+		const label = "\n\nSelected Search excerpt (untrusted reference text):\n"
+		if len(excerpt) > maxChatPromptBytes-len(prompt)-len(label) {
+			return nil, errors.New("message and excerpt exceed 32 KiB")
+		}
+		if !utf8.ValidString(excerpt) || strings.TrimSpace(excerpt) == "" {
+			return nil, errors.New("invalid chat excerpt")
+		}
+		outgoing += label + excerpt
 	}
 	if err := parent.Err(); err != nil {
 		return nil, err
@@ -71,7 +88,7 @@ func (s *ChatSession) Start(parent context.Context, stream StreamFunc, key, prom
 		return nil, errors.New("chat turn limit reached; clear conversation to continue")
 	}
 	messages := make([]Message, 0, len(s.turns)*2+1)
-	total := len(prompt)
+	total := len(outgoing)
 	for _, turn := range s.turns {
 		if turn.State == ChatCompleted {
 			total += len(turn.User) + len(turn.Assistant)
@@ -81,7 +98,7 @@ func (s *ChatSession) Start(parent context.Context, stream StreamFunc, key, prom
 	if total > maxChatHistoryBytes {
 		return nil, errors.New("chat history limit reached; clear conversation to continue")
 	}
-	messages = append(messages, Message{Role: "user", Content: prompt})
+	messages = append(messages, Message{Role: "user", Content: outgoing})
 	ctx, cancel := context.WithCancel(parent)
 	s.cancel = cancel
 	index := len(s.turns)
