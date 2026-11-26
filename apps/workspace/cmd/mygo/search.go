@@ -111,15 +111,18 @@ func (s *shell) renderSearch(c *ui.Context, snap core.WorkspaceSnapshot, paneID 
 	ui.TextInput(c.Key("search-endpoint"), &f.endpoint).Label("Local XERJ endpoint").MaxLength(256)
 	ui.TextInput(c.Key("search-index"), &f.index).Label("Exact index name").Placeholder("Enter the index slug").MaxLength(128)
 	ui.Row(c).Gap(spaceControl).Children(func() {
-		ui.TextInput(c.Key("search-query"), &f.query).Label("Search text").Placeholder("Enter keywords").MaxLength(4096).Grow(1)
-		ui.Button(c, "Find passages").Disabled(f.request().query == "" || f.request().index == "").OnClick(func() {
-			window := s.window
-			var wake func()
-			if window != nil {
-				wake = window.Invalidate
-			}
-			f.start(wake)
-		})
+		query := ui.TextInput(c.Key("search-query"), &f.query).Label("Search text").Placeholder("Enter keywords").MaxLength(4096).Grow(1)
+		req := f.request()
+		disabled := req.query == "" || req.index == ""
+		clicked := ui.Button(c, "Find passages").Disabled(disabled).Clicked()
+		if disabled || !(query.Submitted() || clicked) {
+			return
+		}
+		var wake func()
+		if window := s.window; window != nil {
+			wake = window.Invalidate
+		}
+		f.start(wake)
 	})
 	r := f.result
 	if r == nil || r.request != f.request() {

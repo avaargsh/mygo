@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -28,26 +29,44 @@ func TestWorkspaceLocalSearchLive(t *testing.T) {
 	}
 	s := &shell{workspace: w, content: content, theme: "system"}
 	s.open("home")
-	tt := ui.NewTester(s.view, 1600, 900)
+	tt := ui.NewTester(s.view, 1000, 680)
 	if err := tt.Click("Search"); err != nil {
 		t.Fatal(err)
 	}
 	f := s.searchSession()
 	defer f.stop()
-	f.endpoint, f.index, f.query = endpoint, index, "asterquill"
-	if err := tt.Click("Find passages"); err != nil {
+	f.endpoint, f.index = endpoint, index
+	tt.Frame()
+	if err := tt.Click("Search text"); err != nil {
 		t.Fatal(err)
 	}
+	tt.Key(0, ui.KeyEnter)
+	if f.pending != nil || f.result != nil {
+		t.Fatal("Enter submitted an empty search")
+	}
+	tt.Type("asterquill")
+	if f.query != "asterquill" {
+		t.Fatalf("query input = %q", f.query)
+	}
+	tt.Key(0, ui.KeyEnter)
+	if f.pending == nil && f.result == nil {
+		t.Fatal("Enter did not submit the search")
+	}
 	wait.Until(t, "live search results to arrive", func() bool {
-		f.collect()
+		tt.Frame()
 		return f.result != nil
 	})
 	if f.result.err != nil {
 		t.Fatal(f.result.err)
 	}
 	for _, hit := range f.result.hits {
-		if hit.Index == index && strings.HasSuffix(hit.Path, "guide.md") && strings.Contains(strings.ToLower(hit.Text), "asterquill") {
-			tt.Frame()
+		if hit.Index == index && filepath.Base(hit.Path) == "guide.md" && strings.Contains(strings.ToLower(hit.Text), "asterquill") {
+			if !tt.HasText("synthetic runbook verification marker") {
+				t.Fatalf("returned passage was not rendered: %v", tt.Texts())
+			}
+			if !tt.HasText(searchSource(hit)) {
+				t.Fatalf("source was not rendered: %v", tt.Texts())
+			}
 			t.Logf("verified exact index %s and source %s", index, searchSource(hit))
 			return
 		}
