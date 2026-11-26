@@ -35,7 +35,8 @@ Launch **MyGo Workspace** from the application menu or run
    requires an API key, enter it in the password field, then send a message.
 6. Open **Search** and select an exact index on a separately running,
    local XERJ node. Enter keywords and choose **Find passages**. MyGo does
-   not build an index or start the XERJ node on your behalf.
+   not build an index or start the XERJ node on your behalf. To use a
+   result in Chat, attach it there before sending.
 7. Click **Save workspace**, quit, and reopen. The split sizes, tabs,
    selection, theme and saved note return. Web navigation and terminal
    processes do not resume automatically. Search configuration/results,
@@ -384,9 +385,9 @@ Tab or complete Go 1.27.4 cloud-host build was verified.
 
 Open Chat from the toolbar or Commands. Enter a full Chat Completions endpoint,
 model name, optional API key, and message, then explicitly choose Send message.
-Opening/restoring the tab makes no network request. Only the prompt and prior
-completed chat turns are sent to the selected endpoint. No notes, files,
-browser, terminal, or system context is attached. Once a send is accepted,
+Opening or restoring the tab makes no network request. Chat sends the
+prompt and prior completed turns, plus one Search excerpt when you choose
+to attach it. Once a send is accepted,
 the endpoint and model are bound to the conversation; clear it to switch.
 The password field is cleared after accepting a send and on window close.
 No credential or chat history is persisted; clearing a Go string is not
@@ -443,6 +444,21 @@ plain-text excerpt. A source is a label, not a link or a verified citation.
 
 See [the XERJ adapter guide](../../plugins/xerj/README.md) to prepare a local
 node and look up its indexed slug. MyGo does not install or start XERJ,
-scan folders, create indices, contact a remote node, or send results to a
-model in this first search view. Connection settings, queries and results
-are not written to workspace state. A saved Search tab reopens idle.
+scan folders, create indices, or contact a remote node. Connection settings,
+queries and results are not written to workspace state. A saved Search tab
+reopens idle.
+
+### Use a Search excerpt in Chat
+
+Run Search, then open the Chat conversation that should receive the excerpt.
+Choose **Attach Search excerpt**, read the results, and attach one passage.
+Use **Review attached excerpt** to see the exact text or **Remove excerpt** to
+drop it. **Send message with excerpt** adds the text to the current user
+message sent to the displayed model endpoint.
+
+An attachment belongs to its Chat draft. The Search query, index and source
+label stay local. The excerpt is consumed when the send is accepted and is
+not stored in workspace state or in the archived user turn. Later requests
+use the original prompt and the assistant reply as conversation history.
+The model may quote the excerpt in its reply. The combined message and
+excerpt must fit within Chat's 32 KiB message limit.
