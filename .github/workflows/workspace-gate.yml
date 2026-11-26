@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [main, feat/workspace-m0-foundation, test/workspace-native-smoke, test/xerj-native-panel]
+    branches: [main, feat/workspace-m0-foundation, test/workspace-native-smoke]
   workflow_dispatch:
 
 permissions:
