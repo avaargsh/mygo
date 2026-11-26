@@ -18,7 +18,7 @@ func TestFixtureServicePreflight(t *testing.T) {
 		t.Skip("desktop fixture only")
 	}
 	var calls atomic.Int32
-	var corrupt atomic.Bool
+	var mode atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
 		if r.Method != http.MethodPost || r.URL.Path != "/fixture-text/_search" {
@@ -33,11 +33,17 @@ func TestFixtureServicePreflight(t *testing.T) {
 			return
 		}
 		if _, ok := req["track_total_hits"]; ok {
-			body := "mygoxerjfixturemarker\n"
-			if corrupt.Load() {
-				body = "wrong fixture\n"
+			body := "mygoxerjfixturemarker"
+			switch mode.Load() {
+			case 1:
+				body = "wrong fixture"
+			case 2:
+				body += "\n"
+			case 3:
+				fmt.Fprintf(w, `{"hits":{"total":{"value":1,"relation":"eq"},"hits":[{"_index":"fixture-text","_source":{"ax_path":"mygo-xerj-fixture.txt","body":%q}}]}}`, body)
+				return
 			}
-			fmt.Fprintf(w, `{"hits":{"total":{"value":1,"relation":"eq"},"hits":[{"_index":"fixture-text","_source":{"ax_path":"mygo-xerj-fixture.txt","body":%q}}]}}`, body)
+			fmt.Fprintf(w, `{"hits":{"total":{"value":2,"relation":"eq"},"hits":[{"_index":"fixture-text","_source":{"ax_path":"mygo-xerj-fixture.txt","ax_paths":["mygo-xerj-fixture.txt"],"ax_file":"fixture-id","ax_run":"fixture-run","ax_format":"txt-prose","ax_locator":"file"}},{"_index":"fixture-text","_source":{"ax_path":"mygo-xerj-fixture.txt","ax_paths":["mygo-xerj-fixture.txt"],"ax_file":"fixture-id","ax_run":"fixture-run","ax_format":"txt-prose","ax_locator":"s0","start_line":1,"end_line":1,"body":%q}}]}}`, body)
 			return
 		}
 		fmt.Fprint(w, `{"hits":{"hits":[{"_index":"fixture-text","_source":{"ax_path":"mygo-xerj-fixture.txt"},"fields":{"_passage":{"text":"mygoxerjfixturemarker","start_offset":0}}}]}}`)
@@ -63,7 +69,7 @@ func TestFixtureServicePreflight(t *testing.T) {
 	})
 	t.Run("digest mismatch fails closed", func(t *testing.T) {
 		t.Setenv("MYGO_XERJ_PANEL", "1")
-		corrupt.Store(true)
+		mode.Store(1)
 		before := calls.Load()
 		service, _ := fixtureService()
 		got := service.Search(context.Background(), "needle", 5)
@@ -71,9 +77,29 @@ func TestFixtureServicePreflight(t *testing.T) {
 			t.Fatalf("unexpected result or request: %+v calls=%d", got, calls.Load())
 		}
 	})
-	t.Run("verified fixture permits search", func(t *testing.T) {
+	t.Run("trailing newline fails exact byte check", func(t *testing.T) {
 		t.Setenv("MYGO_XERJ_PANEL", "1")
-		corrupt.Store(false)
+		mode.Store(2)
+		before := calls.Load()
+		service, _ := fixtureService()
+		got := service.Search(context.Background(), "needle", 5)
+		if got.State != xerj.SearchDisabled || len(got.Hits) != 0 || calls.Load() != before+1 {
+			t.Fatalf("unexpected result or request: %+v calls=%d", got, calls.Load())
+		}
+	})
+	t.Run("verified legacy record permits search", func(t *testing.T) {
+		t.Setenv("MYGO_XERJ_PANEL", "1")
+		mode.Store(3)
+		before := calls.Load()
+		service, _ := fixtureService()
+		got := service.Search(context.Background(), "mygoxerjfixturemarker", 5)
+		if got.State != xerj.SearchMatches || len(got.Hits) != 1 || calls.Load() != before+2 {
+			t.Fatalf("unexpected result or request: %+v calls=%d", got, calls.Load())
+		}
+	})
+	t.Run("verified rc.103 file and section permit search", func(t *testing.T) {
+		t.Setenv("MYGO_XERJ_PANEL", "1")
+		mode.Store(0)
 		before := calls.Load()
 		service, _ := fixtureService()
 		got := service.Search(context.Background(), "mygoxerjfixturemarker", 5)

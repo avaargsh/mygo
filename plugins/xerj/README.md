@@ -46,7 +46,7 @@ Unit tests use an HTTP fixture. They establish adapter behavior only. The opt-in
 Use a fresh disposable local node on an unused port (not an existing personal or shared index), with a pinned verified binary. Confirm its version using `xerj --version`. Create a dedicated temporary corpus and keep the node data directory outside it:
 
     mkdir -p /path/to/disposable-corpus
-    printf 'mygoxerjfixturemarker\n' > /path/to/disposable-corpus/mygo-xerj-fixture.txt
+    printf '%s' 'mygoxerjfixturemarker' > /path/to/disposable-corpus/mygo-xerj-fixture.txt
     XERJ_DISABLE_FEEDBACK=true xerj autoindex /path/to/disposable-corpus --url http://127.0.0.1:9200 --prefix mygo-fixture
     xerj autoindex map --url http://127.0.0.1:9200 --json
 

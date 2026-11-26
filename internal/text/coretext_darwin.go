@@ -1298,22 +1298,40 @@ func (e *coreText) line(line uintptr, index []int, n int, italic bool) shapedLin
 // Japanese text, to the advance of the letter before it, so that the
 // widths of lines and the carets follow the pen. Only room ahead of the
 // pen counts: a mark placed back over its letter leaves the advances as
-// they are. Right-to-left runs keep theirs.
+// they are.
+//
+// Right to left, Core Text places glyphs off the pen where a font
+// attaches its letters cursively or places a mark ahead of its letter or
+// behind it: in Amiri, مَّرَضٌ starts with its tanween at 57, whose
+// advance takes the pen back to 0, and بِسْمِ ٱللَّهِ with a kasra at
+// -7.5. Its line is as wide as its last glyph's pen, which the advances
+// alone miss (128 of مَّرَضٌ's 203). So the room between a right-to-left
+// glyph and the pen, ahead or behind and from the line's start on, goes
+// to the advance of the glyph before it, or of the first glyph, and the
+// line is as wide as Core Text's (CTLineGetTypographicBounds).
 func penAdvances(runs []shapedRun) {
 	var prev *Glyph
 	var pen float32
 	for i := range runs {
 		for j := range runs[i].glyphs {
 			g := &runs[i].glyphs[j]
+			adv := g.Advance
 			if prev != nil && !prev.RTL && !g.RTL {
 				if gap := g.X - pen; gap > 1e-3 {
 					prev.Advance += gap
 					pen += gap
 				}
 			} else {
+				if gap := g.X - pen; g.RTL && (gap > 1e-3 || gap < -1e-3) {
+					if prev != nil {
+						prev.Advance += gap
+					} else {
+						g.Advance += gap
+					}
+				}
 				pen = g.X
 			}
-			pen += g.Advance
+			pen += adv
 			prev = g
 		}
 	}
@@ -1809,3 +1827,40 @@ func (e *coreText) forgetFonts() {
 
 // releaseFonts releases the CTFonts of the Fonts nothing refers to.
 func (e *coreText) releaseFonts() { e.releaseDead(ct.release) }
+
+// close releases what the engine holds of Core Text and Core Graphics
+// once its System is unreachable (engineCloser): the fonts of its styles,
+// with their attributes and typesetters, its CTFonts, its paragraph
+// styles, its color space, its italic attribute's name and the
+// descriptors of the app's fonts it registered.
+func (e *coreText) close() {
+	e.forgetPrimary()
+	e.forgetFonts()
+	e.closeFonts(ct.release)
+	release := func(obj uintptr) {
+		if obj != 0 {
+			ct.release(obj)
+		}
+	}
+	for _, p := range e.tabStyles {
+		release(p)
+	}
+	clear(e.tabStyles)
+	for i, p := range e.styles {
+		release(p)
+		e.styles[i] = 0
+	}
+	release(e.srgb)
+	release(e.italic)
+	e.srgb, e.italic = 0, 0
+	// Each face is in gaveFaces once, retained once; ownFaces and
+	// registered hold the same faces.
+	for _, faces := range e.gaveFaces {
+		for _, f := range faces {
+			release(f.desc)
+		}
+	}
+	clear(e.gaveFaces)
+	clear(e.ownFaces)
+	clear(e.registered)
+}
