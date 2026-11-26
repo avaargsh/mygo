@@ -68,6 +68,7 @@ not infer a resume decision from a restored Tab.
 | Browser | Unmount the WebView when not shown; keep its session in the current process. | Close page releases the WebView; Go navigates. |
 | Terminal | Keep the current shell when the view is hidden. | Start shell or Close terminal; no shell starts on restore. |
 | Chat | Keep the selected instance's draft and current generation in memory as applicable. Other instances are independent. | Send, Stop generation, or explicitly save/load an archive. |
+| Run History | A view of process-local Chat run metadata, independent of the conversation and its archive. | Stop targets one active run by its execution identity. |
 | Agent background task | Closing or switching a future Agent view must not cancel its run. | The runtime owns start, cancel, retry, checkpoint, and policy-authorized resume. |
 
 The first shared implementation covers view counts, mount selection,

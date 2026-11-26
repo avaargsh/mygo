@@ -462,3 +462,17 @@ not stored in workspace state or in the archived user turn. Later requests
 use the original prompt and the assistant reply as conversation history.
 The model may quote the excerpt in its reply. The combined message and
 excerpt must fit within Chat's 32 KiB message limit.
+
+### View and stop Chat runs
+
+Open **Run History** from the Explorer or Commands to see generations in
+the current Workspace session, including runs whose Chat tab is closed.
+Each entry shows its run number, conversation, start time and status.
+**Stop run** targets that generation. After a cancellation request, the
+run displays `stopping` until the model worker exits, then `canceled`.
+
+Clearing a conversation leaves its run outcomes visible. The history keeps
+the most recent 64 entries and preserves active runs while pruning older
+finished ones. It displays execution metadata only. The Run History tab
+can reopen with the saved layout, but its entries are kept in memory and
+start empty after the app restarts.

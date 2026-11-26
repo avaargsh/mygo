@@ -29,6 +29,8 @@ type shell struct {
 	closePromptOpen bool
 	sessionEnding   bool
 	sidebar         shellPanel
+	chatRuns        []chatRunEntry
+	nextChatRunID   uint64
 }
 
 func (s *shell) nextID(prefix string) string {
@@ -240,6 +242,8 @@ func (s *shell) renderContent(c *ui.Context, snapshot core.WorkspaceSnapshot, pa
 		} else {
 			ui.Text(c, "Chat session unavailable")
 		}
+	case "runs":
+		s.renderRunHistory(c)
 	case "notes":
 		n, ok := session.Value.(*core.Note)
 		if !ok || n == nil {

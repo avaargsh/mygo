@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/egoist/mygo/internal/wait"
 )
 
 func awaitChat(t *testing.T, done <-chan struct{}) {
@@ -192,5 +194,41 @@ func TestChatSessionRejectsExcerptOutsidePromptBudget(t *testing.T) {
 				t.Fatal("invalid excerpt or prompt changed the session")
 			}
 		})
+	}
+}
+
+func TestChatRunRetainsOutcomeAndCannotStopLaterRun(t *testing.T) {
+	var chat ChatSession
+	completed, err := chat.StartRun(t.Context(), func(_ context.Context, _ string, _ []Message, emit func(string) error) (Completion, error) {
+		return Completion{Text: "reply", FinishReason: "stop"}, emit("reply")
+	}, "", "first", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wait.For(t, "first run to complete", completed.done)
+	if err := chat.Clear(); err != nil {
+		t.Fatal(err)
+	}
+
+	finish := make(chan struct{}, 1)
+	defer close(finish)
+	running, err := chat.StartRun(t.Context(), func(ctx context.Context, _ string, _ []Message, _ func(string) error) (Completion, error) {
+		<-ctx.Done()
+		<-finish
+		return Completion{}, ctx.Err()
+	}, "", "second", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if completed.State() != ChatCompleted || completed.Cancel() || running.State() != ChatRunning {
+		t.Fatal("the previous run lost its outcome or canceled a different generation")
+	}
+	if !running.Cancel() || running.State() != ChatStopping || running.Cancel() {
+		t.Fatal("current run did not retain its pending cancellation")
+	}
+	finish <- struct{}{}
+	wait.For(t, "second run to finish canceling", running.done)
+	if running.State() != ChatCanceled || completed.State() != ChatCompleted {
+		t.Fatal("run outcomes were not independent")
 	}
 }

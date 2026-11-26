@@ -20,6 +20,7 @@ func builtInContent(dir string) (*core.ContentManager, error) {
 		}},
 		{ID: "files", Title: "Files", Open: func() (any, error) { return &filesSession{}, nil }},
 		{ID: "chat", Title: "Chat", Open: func() (any, error) { return &chatViewSession{}, nil }, NewInstance: func(id string) (any, error) { return &chatViewSession{sessionID: id}, nil }},
+		{ID: "runs", Title: "Run History", Open: func() (any, error) { return nil, nil }},
 		{ID: "notes", Title: "Notes", Open: func() (any, error) {
 			return core.OpenNote(filepath.Join(dir, "notes.md"))
 		}},
