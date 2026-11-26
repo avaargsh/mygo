@@ -2,7 +2,7 @@ name: Workspace Distribution
 
 on:
   push:
-    branches: [feat/workspace-distribution]
+    branches: [main, test/workspace-linux-notices]
   workflow_dispatch:
 
 permissions:
@@ -40,13 +40,45 @@ jobs:
           dpkg-deb --info mygo-workspace_0.1.0_amd64.deb
           dpkg-deb --contents mygo-workspace_0.1.0_amd64.deb
           tar -tzf mygo-workspace-0.1.0-linux-amd64.tar.gz
-          sha256sum mygo-workspace_0.1.0_amd64.deb mygo-workspace-0.1.0-linux-amd64.tar.gz install.sh > SHA256SUMS
+          notice=../../resources/linux/copyright
+          tmp=$(mktemp -d)
+          trap 'rm -rf -- "$tmp"' EXIT
+          dpkg-deb -x mygo-workspace_0.1.0_amd64.deb "$tmp"
+          cmp "$notice" "$tmp/usr/share/doc/mygo-workspace/copyright"
+          tar -xOzf mygo-workspace-0.1.0-linux-amd64.tar.gz copyright | cmp "$notice" -
+          tar -xOzf mygo-workspace-0.1.0-linux-amd64.tar.gz libghostty-vt.so > "$tmp/ghostty-tar.so"
+          python3 ../../../../check-linux-native-notices.py "$tmp/opt/mygo-workspace/libghostty-vt.so" "$tmp/ghostty-tar.so"
+          # Distinguish dynamic dependencies from the pinned static components.
+          readelf -d "$tmp/opt/mygo-workspace/libghostty-vt.so" | grep '(NEEDED)'
+          # A positive marker is evidence of retention, not a full asset inventory.
+          python3 -c 'from pathlib import Path; data = Path("mygo-workspace").read_bytes(); print("Terminal theme name markers:", [name for name in ("Belafonte Day", "Belafonte Night") if name.encode() in data])'
+          go version -m ./mygo-workspace > GO-BUILD-INFO.txt
+          cat GO-BUILD-INFO.txt
+          # A changed binary inventory needs a new notice review.
+          awk '$1 == "dep" { print $2, $3, $4 }' GO-BUILD-INFO.txt | LC_ALL=C sort > "$tmp/go-modules"
+          diff -u ../../../../linux-go-notices.modules "$tmp/go-modules"
+          sha256sum mygo-workspace_0.1.0_amd64.deb mygo-workspace-0.1.0-linux-amd64.tar.gz install.sh GO-BUILD-INFO.txt > SHA256SUMS
           sha256sum -c SHA256SUMS
       - name: Verify installed user application
         run: |
           bash -n apps/workspace/smoke-install-linux.sh
           xvfb-run -a dbus-run-session -- bash apps/workspace/smoke-install-linux.sh apps/workspace/cmd/mygo/dist/linux-amd64
+      - name: Test Debian package writer
+        run: go test ./cmd/mygo -run '^TestDebCopyright$' -count=1
+      - name: Verify apt-installed application
+        run: |
+          deb=apps/workspace/cmd/mygo/dist/linux-amd64/mygo-workspace_0.1.0_amd64.deb
+          test "$(dpkg-query -W -f='${db:Status-Status}' mygo-workspace 2>/dev/null || true)" != installed
+          sudo apt-get install -y --no-install-recommends "./$deb"
+          trap 'sudo apt-get remove -y mygo-workspace' EXIT
+          xvfb-run -a dbus-run-session -- bash apps/workspace/smoke-install-linux.sh "${deb%/*}" --deb-installed
+          sudo apt-get remove -y mygo-workspace
+          trap - EXIT
+          test ! -e /usr/bin/mygo-workspace && test ! -L /usr/bin/mygo-workspace
+          test ! -e /usr/share/doc/mygo-workspace/copyright
+          echo 'PASS: apt removal cleaned up the launcher and copyright'
       - uses: actions/upload-artifact@v4
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         with:
           name: mygo-workspace-0.1.0-linux-amd64
           path: |
@@ -54,4 +86,5 @@ jobs:
             apps/workspace/cmd/mygo/dist/linux-amd64/*.tar.gz
             apps/workspace/cmd/mygo/dist/linux-amd64/install.sh
             apps/workspace/cmd/mygo/dist/linux-amd64/SHA256SUMS
+            apps/workspace/cmd/mygo/dist/linux-amd64/GO-BUILD-INFO.txt
           if-no-files-found: error
