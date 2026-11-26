@@ -25,7 +25,13 @@ func (s *shell) view(c *ui.Context) {
 	ui.Themed(c, workspaceTheme(c)).Fill().Padding(spaceControl).Gap(spaceControl).Children(func() {
 		ui.Row(c.Key("workspace-header")).Gap(spaceControl).Wrap().Children(func() {
 			ui.Text(c, "MyGo Workspace").FontSize(fontTitle).Bold()
+			if s.host != nil {
+				ui.Text(c, s.profile.Name).SingleLine().MaxWidth(220)
+			}
 			ui.Spacer(c)
+			if s.host != nil {
+				s.commandButton(c, "choose-workspace", "workspace.switch", "Workspaces")
+			}
 			ui.Button(c.Key("open-commands"), "Commands").OnClick(func() {
 				s.paletteOpen = !s.paletteOpen
 				s.paletteQuery = ""
@@ -50,6 +56,9 @@ func (s *shell) view(c *ui.Context) {
 			})
 		})
 		s.renderStatusBar(c, snapshot)
+		if s.host != nil {
+			s.host.renderChooser(c)
+		}
 	})
 }
 

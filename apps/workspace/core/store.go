@@ -70,6 +70,10 @@ func SaveState(path string, w *Workspace, theme string) error {
 	if len(data) > maxStateBytes {
 		return errors.New("workspace state exceeds size limit")
 	}
+	return writeWorkspaceFile(path, data)
+}
+
+func writeWorkspaceFile(path string, data []byte) error {
 	f, err := os.CreateTemp(filepath.Dir(path), ".workspace-*")
 	if err != nil {
 		return err

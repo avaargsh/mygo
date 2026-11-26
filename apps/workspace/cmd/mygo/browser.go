@@ -24,9 +24,11 @@ func (s *shell) navigateBrowser(b *browserSession) {
 			s.status = "desktop window not ready"
 			return
 		}
-		view, err := s.window.NewWebView(mygo.WebViewOptions{
-			Page: mygo.PageOptions{Untrusted: true},
-		})
+		page := mygo.PageOptions{Untrusted: true}
+		if id := s.profile.ID; id != "" && id != core.DefaultWorkspaceID {
+			page.Session = mygo.NewSession("workspace-" + id)
+		}
+		view, err := s.window.NewWebView(mygo.WebViewOptions{Page: page})
 		if err != nil {
 			s.status = "Browser start failed: " + err.Error()
 			return

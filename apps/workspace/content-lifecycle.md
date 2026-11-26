@@ -27,6 +27,10 @@ Pane, or Session ID.
   Opening the same instance reuses its current session. Selecting or
   hiding a view cannot send a request, start a shell, stop a run, or evict a
   session. Closing the last reference has no implicit stop or reset rule.
+- **Switch Workspace:** display another workspace's layout and its own
+  content registry. The previous workspace retains drafts and live executions.
+  Closing the app checks unsaved changes and cleans up sessions across the
+  loaded workspaces.
 - **Mount selection:** an active view in the focused pane wins. Otherwise
   the first active view in layout order wins. No active view means no
   mount. A hidden tab remains a reference. `ResolveContentViews` makes

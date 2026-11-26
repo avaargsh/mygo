@@ -1,6 +1,10 @@
 package main
 
-import "github.com/egoist/mygo"
+import (
+	"fmt"
+
+	"github.com/egoist/mygo"
+)
 
 const (
 	closeSave = iota
@@ -23,11 +27,15 @@ func (s *shell) confirmClose(dialog func(mygo.MessageOptions) (mygo.MessageResul
 	}
 	s.closePromptOpen = true
 	defer func() { s.closePromptOpen = false }()
+	message := "Save your changes before closing?"
+	if s.profile.Name != "" {
+		message = fmt.Sprintf("Save changes to %q before closing?", s.profile.Name)
+	}
 	result, err := dialog(mygo.MessageOptions{
 		Parent:             s.window,
 		Type:               mygo.MessageWarning,
 		Title:              "MyGo Workspace",
-		Message:            "Save your changes before closing?",
+		Message:            message,
 		Buttons:            []string{"Save and Close", "Close Without Saving", "Cancel"},
 		DefaultButton:      closeCancel,
 		CancelButton:       closeCancel,

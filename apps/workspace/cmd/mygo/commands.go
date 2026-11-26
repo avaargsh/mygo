@@ -16,6 +16,9 @@ func (s *shell) commandRegistry() *core.CommandRegistry {
 		}
 	}
 	register(core.Command{ID: "workspace.save", Title: "Save workspace", Keywords: "保存", Run: s.save})
+	if s.host != nil {
+		register(core.Command{ID: "workspace.switch", Title: "Switch workspace", Keywords: "create workspaces 创建 切换 工作空间", Run: s.host.showChooser})
+	}
 	for _, mode := range []string{"system", "light", "dark"} {
 		register(core.Command{ID: "theme." + mode, Title: "Theme: " + mode, Keywords: "appearance 主题", Run: func() { s.setTheme(mode) }})
 	}
