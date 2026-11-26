@@ -110,7 +110,7 @@ func main() {
 
 ## Getting started
 
-With [Go](https://go.dev/dl/) 1.27.3+ and [Bun](https://bun.sh), create an app
+With [Go](https://go.dev/dl/) 1.27.4+ and [Bun](https://bun.sh), create an app
 with a web frontend:
 
 ```sh
