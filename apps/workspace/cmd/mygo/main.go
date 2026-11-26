@@ -28,6 +28,7 @@ type shell struct {
 	paletteQuery    string
 	closePromptOpen bool
 	sessionEnding   bool
+	sidebar         shellPanel
 }
 
 func (s *shell) nextID(prefix string) string {
@@ -138,75 +139,6 @@ func (s *shell) moveNext() {
 	}
 }
 
-func (s *shell) view(c *ui.Context) {
-	snapshot := s.workspace.Snapshot()
-	ui.Themed(c, workspaceTheme(c)).Fill().Padding(spacePage).Gap(spaceSection).Children(func() {
-		ui.Row(c).Gap(12).Children(func() {
-			ui.Text(c, "MyGo Workspace").FontSize(fontTitle).Bold()
-			ui.Spacer(c)
-			ui.Text(c, "Local workspace").TextColor(c.Theme().TextMuted)
-			ui.Button(c.Key("open-commands"), "Commands").OnClick(func() { s.paletteOpen = !s.paletteOpen; s.paletteQuery = "" })
-		})
-		ui.Row(c).Gap(spaceControl).Wrap().Children(func() {
-			ui.PrimaryButton(c.Key("save"), "Save workspace").OnClick(func() { s.runCommand("workspace.save") })
-			for _, mode := range []string{"system", "light", "dark"} {
-				label := mode
-				if mode == s.theme {
-					label += " (selected)"
-				}
-				s.commandButton(c, "theme-"+mode, "theme."+mode, label)
-			}
-			s.commandButton(c, "open-home", "content.home", "Home")
-			s.commandButton(c, "open-runtime", "content.runtime", "Runtime info")
-			s.commandButton(c, "open-system", "content.system", "System Info")
-			s.commandButton(c, "open-notes", "content.notes", "Notes")
-			s.commandButton(c, "open-browser", "content.browser", "Browser")
-			s.commandButton(c, "open-terminal", "content.terminal", "Terminal")
-			s.commandButton(c, "open-search", "content.search", "Search")
-			s.commandButton(c, "open-files", "content.files", "Files")
-			s.commandButton(c, "open-chat", "content.chat", "Chat")
-			s.commandButton(c, "new-chat", "content.new-chat", "New chat")
-			s.commandButton(c, "split-right", "layout.split-right", "Split right")
-			s.commandButton(c, "split-down", "layout.split-down", "Split down")
-			s.commandButton(c, "move-next", "layout.move-next", "Move tab to next pane")
-			s.commandButton(c, "remove-pane", "layout.remove-pane", "Close empty pane")
-		})
-		if s.paletteOpen {
-			s.renderCommandPalette(c)
-		}
-		s.renderNode(c, snapshot, snapshot.Layout)
-		saved := "Saved"
-		if s.dirty {
-			saved = "Unsaved changes"
-		}
-		ui.Text(c, fmt.Sprintf("Development build · %d panes · %s", len(snapshot.Panes), saved)).FontSize(fontSmall).TextColor(c.Theme().TextMuted)
-		if n := s.note(); n != nil && n.Dirty() {
-			ui.Text(c, "Notes have unsaved changes").FontSize(fontSmall)
-			ui.Button(c.Key("save-dirty-note"), "Save note changes").OnClick(s.saveNote)
-		}
-		if session := s.content.Session("browser"); session != nil {
-			if browser, ok := session.Value.(*browserSession); ok && browser.view != nil && core.SessionOwner(snapshot, "browser") == "" {
-				ui.Button(c.Key("release-hidden-browser"), "Close hidden browser page").OnClick(func() { s.releaseBrowser(browser) })
-			}
-		}
-		if t := s.terminalSession(); t != nil && core.SessionOwner(snapshot, "terminal") == "" {
-			if t.Resource() != nil {
-				ui.Button(c.Key("close-hidden-terminal"), "Close hidden terminal").OnClick(func() { s.stopTerminal(t) })
-			}
-			if t.State() == core.TerminalStopping {
-				ui.Text(c, "Hidden terminal stopping…").FontSize(fontSmall)
-			}
-		}
-		if f := s.filesSession(); f != nil && f.browser != nil && core.SessionOwner(snapshot, "files") == "" {
-			ui.Button(c.Key("revoke-hidden-files"), "Revoke hidden folder access").OnClick(func() { s.fileResult(f.close()) })
-		}
-		s.renderChatActivity(c, snapshot)
-		if s.status != "" {
-			ui.Text(c, s.status)
-		}
-	})
-}
-
 func (s *shell) renderNode(c *ui.Context, snapshot core.WorkspaceSnapshot, n core.LayoutNode) {
 	ui.Column(c.Key(n.ID)).Grow(1).MinWidth(0).MinHeight(0).Children(func() {
 		if len(n.Children) == 0 {
@@ -244,18 +176,7 @@ func (s *shell) renderPane(c *ui.Context, snapshot core.WorkspaceSnapshot, id st
 			label += " (focused)"
 		}
 		ui.Button(c.Key("focus"), label).OnClick(func() { s.apply(s.workspace.Focus(id)) })
-		ui.Row(c).Gap(4).Wrap().Children(func() {
-			for _, tab := range pane.Tabs {
-				ui.Row(c.Key(tab.ID)).Gap(4).Children(func() {
-					label := tab.Title
-					if tab.ID == pane.ActiveTab {
-						label += " (active)"
-					}
-					ui.Button(c, label).OnClick(func() { s.apply(s.workspace.Activate(id, tab.ID)) })
-					ui.Button(c, "×").Label("Close " + tab.Title).OnClick(func() { s.apply(s.workspace.Close(id, tab.ID)) })
-				})
-			}
-		})
+		s.renderTabBar(c, id, pane)
 		ui.Divider(c)
 		for _, tab := range pane.Tabs {
 			if tab.ID == pane.ActiveTab {
