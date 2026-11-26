@@ -384,6 +384,8 @@ export interface AndroidAdaptiveIcon {
 }
 
 export interface LinuxConfig {
+  /** Top-level UTF-8 resource also installed as the Debian package copyright notice. */
+  copyrightFile?: string;
   /** `Name <email>`, the maintainer of the Debian and RPM packages and of the PKGBUILD (default: `author` in package.json, else the app's name). */
   maintainer?: string;
   /** A short description, for the desktop entry and the packages. */

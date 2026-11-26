@@ -17,6 +17,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // Linux configures Linux packaging.
@@ -25,6 +26,9 @@ type Linux struct {
 	// "Name <email>" (default: the author in package.json, else the app's
 	// name).
 	Maintainer string `json:"maintainer"`
+	// CopyrightFile names a top-level resource whose text also goes in
+	// /usr/share/doc/<package>/copyright in the Debian package.
+	CopyrightFile string `json:"copyrightFile"`
 	// Comment is a short description of the app, for its desktop entry and
 	// its packages.
 	Comment string `json:"comment"`
@@ -201,6 +205,33 @@ func writeDeb(c *Config, stage, name, goarch string, app []string) (string, erro
 		if err != nil {
 			return "", err
 		}
+	}
+	if file := c.Linux.CopyrightFile; file != "" {
+		if strings.ContainsAny(file, `/\`) || file == "." || file == ".." || !slices.Contains(app, file) {
+			return "", fmt.Errorf("linux.copyrightFile %q must name a top-level resource", file)
+		}
+		p := filepath.Join(stage, file)
+		info, err := os.Lstat(p)
+		if err != nil {
+			return "", fmt.Errorf("linux.copyrightFile: %w", err)
+		}
+		if !info.Mode().IsRegular() || info.Size() == 0 {
+			return "", fmt.Errorf("linux.copyrightFile %q must be a nonempty regular file", file)
+		}
+		b, err := os.ReadFile(p)
+		if err != nil {
+			return "", fmt.Errorf("linux.copyrightFile: %w", err)
+		}
+		if !utf8.Valid(b) || len(bytes.TrimSpace(b)) == 0 {
+			return "", fmt.Errorf("linux.copyrightFile %q must contain UTF-8 text", file)
+		}
+		doc := "usr/share/doc/" + name
+		data.dir("usr/share/doc")
+		data.dir(doc)
+		target := doc + "/copyright"
+		data.file(target, b, 0o644)
+		size += int64(len(b))
+		fmt.Fprintf(md5sums, "%x  %s\n", md5.Sum(b), target)
 	}
 	if len(c.Linux.Command) > 0 {
 		data.dir("usr/bin")

@@ -4,9 +4,9 @@ import (
 	"os"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/egoist/mygo/apps/workspace/core"
+	"github.com/egoist/mygo/internal/wait"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -38,14 +38,10 @@ func TestWorkspaceLocalSearchLive(t *testing.T) {
 	if err := tt.Click("Find passages"); err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.Now().Add(8 * time.Second)
-	for f.result == nil && time.Now().Before(deadline) {
+	wait.Until(t, "live search results to arrive", func() bool {
 		f.collect()
-		time.Sleep(time.Millisecond)
-	}
-	if f.result == nil {
-		t.Fatal("search did not finish")
-	}
+		return f.result != nil
+	})
 	if f.result.err != nil {
 		t.Fatal(f.result.err)
 	}

@@ -85,7 +85,7 @@ func fixtureService() (*xerj.WorkspaceSearchService, string) {
 		return disabled, "Fixture configuration invalid. Search remains disabled."
 	}
 	v := xerj.TextIndexVerifier{Expected: map[string]string{
-		"mygo-xerj-fixture.txt": fmt.Sprintf("%x", sha256.Sum256([]byte("mygoxerjfixturemarker\n"))),
+		"mygo-xerj-fixture.txt": fmt.Sprintf("%x", sha256.Sum256([]byte("mygoxerjfixturemarker"))),
 	}}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

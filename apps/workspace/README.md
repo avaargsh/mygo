@@ -32,6 +32,13 @@ collisions with restored IDs. The app writes state.json under MyGoWorkspace
 in os.UserConfigDir(). A corrupt or unsupported file stops startup without
 overwriting it. To recover manually, back up the file and move it aside.
 
+The Linux preview carries a `copyright` file in the per-user app directory
+(`~/.local/mygo-workspace.app/copyright`) and in the Debian package at
+`/usr/share/doc/mygo-workspace/copyright`. The distribution job also records
+the packaged binary's Go module inventory in `GO-BUILD-INFO.txt`. That
+inventory is an input to reviewing additional linked dependency notices,
+not a substitute for them.
+
 To check the native view without a desktop window:
     go test ./apps/workspace/cmd/mygo -run TestWorkspaceShellSplitMoveSave
 

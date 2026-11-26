@@ -7,9 +7,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 
 	"github.com/egoist/mygo/apps/workspace/core"
+	"github.com/egoist/mygo/internal/wait"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -73,19 +73,13 @@ func TestWorkspaceLocalSearch(t *testing.T) {
 		if err := tt.Click("Find passages"); err != nil {
 			t.Fatal(err)
 		}
-		select {
-		case q := <-queries:
-			if q != tc.query {
-				t.Fatalf("unexpected query %q", q)
-			}
-		case <-time.After(3 * time.Second):
-			t.Fatal("explicit search did not reach local index")
+		if q := wait.For(t, "search request to reach the local index", queries); q != tc.query {
+			t.Fatalf("unexpected query %q", q)
 		}
-		deadline := time.Now().Add(3 * time.Second)
-		for f.result == nil && time.Now().Before(deadline) {
+		wait.Until(t, "search results to arrive", func() bool {
 			f.collect()
-			time.Sleep(time.Millisecond)
-		}
+			return f.result != nil
+		})
 		if r := f.result; r == nil || (r.err != nil) != tc.fail || len(r.hits) != tc.want {
 			t.Fatalf("%s: unexpected result %+v", tc.query, r)
 		}
@@ -112,18 +106,10 @@ func TestWorkspaceSearchCancellationDropsLateResponse(t *testing.T) {
 	f := &searchSession{endpoint: server.URL, index: "notes", query: "first"}
 	f.start(nil)
 	defer f.stop()
-	select {
-	case <-received:
-	case <-time.After(3 * time.Second):
-		t.Fatal("request never started")
-	}
+	wait.For(t, "request to start", received)
 	old := f.pending
 	f.stop()
-	select {
-	case <-old:
-	case <-time.After(3 * time.Second):
-		t.Fatal("cancel did not unblock request")
-	}
+	wait.For(t, "canceled request to finish", old)
 	f.collect()
 	if f.pending != nil || f.result != nil {
 		t.Fatal("canceled request repopulated the view")
