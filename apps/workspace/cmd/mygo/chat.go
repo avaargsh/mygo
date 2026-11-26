@@ -84,14 +84,44 @@ func (s *shell) renderChat(c *ui.Context, snapshot core.WorkspaceSnapshot, paneI
 	state := ch.chat.Snapshot()
 	ui.Text(c, "Model chat").Bold()
 	if ch.boundEndpoint == "" {
-		ui.TextInput(c, &ch.endpoint).Label("Chat completions endpoint").Placeholder("https://host/v1/chat/completions")
-		ui.TextInput(c, &ch.modelName).Label("Model name")
+		ui.TextInput(c.Key("chat-endpoint"), &ch.endpoint).Label("Chat completions endpoint").Placeholder("https://host/v1/chat/completions")
+		ui.TextInput(c.Key("chat-model"), &ch.modelName).Label("Model name")
 	} else {
 		ui.Text(c, "Endpoint: "+ch.boundEndpoint)
 		ui.Text(c, "Model: "+ch.boundModel)
 	}
-	ui.Text(c, "Send transmits your prompt and completed chat history to the selected model. No other workspace content is included. Chats are not automatically saved. Explicit archives contain plaintext messages and the model connection, but not credentials or unsent drafts.")
+	// Keep input and send controls ahead of the flexible transcript in a split pane.
+	if state.Active {
+		c.After(100 * time.Millisecond)
+		ui.Text(c, "Generation active")
+		ui.Button(c, "Stop generation").OnClick(func() { ch.chat.Cancel() })
+	} else {
+		if ch.confirmConnection {
+			ui.Text(c, "Review the restored endpoint and model. Confirm before allowing future sends.")
+			ui.Button(c, "Confirm restored model").OnClick(func() { ch.confirmConnection = false; s.status = "" })
+		}
+		ui.TextArea(c.Key("chat-message"), &ch.draft).Label("Message").Placeholder("Write a message…").Height(64).MinHeight(48).MaxLength(8192)
+		ui.TextInput(c.Key("chat-credential"), &ch.apiKey).Password().MaxLength(8192).Label("API key (optional; cleared on send)")
+		ui.Text(c, "Send shares this chat only.").FontSize(fontSmall)
+		ui.Row(c).Gap(spaceControl).Children(func() {
+			ui.Button(c, "Send message").Disabled(ch.confirmConnection || strings.TrimSpace(ch.draft) == "").OnClick(func() { s.sendChat(ch) })
+			ui.Button(c, "Clear conversation").Disabled(len(state.Turns) == 0).OnClick(func() { s.clearChat(ch) })
+		})
+		ui.Row(c).Gap(spaceControl).Wrap().Children(func() {
+			if ch.archiveConfirm {
+				ui.Button(c, "Confirm archive save").OnClick(func() { s.saveChatArchive(ch) })
+				ui.Button(c, "Cancel archive save").OnClick(func() { ch.archiveConfirm = false })
+			} else {
+				ui.Button(c, "Save chat archive").Disabled(len(state.Turns) == 0 || s.statePath == "").OnClick(func() {
+					ch.archiveConfirm = true
+					s.status = "Save this chat locally in plaintext? This replaces this session’s previous archive."
+				})
+			}
+			ui.Button(c, "Load chat archive").Disabled(!canLoadChatArchive(ch) || s.statePath == "").OnClick(func() { s.loadChatArchive(ch) })
+		})
+	}
 	ui.Scroll(c).Grow(1).MinHeight(0).Children(func() {
+		ui.Text(c, "Send includes your prompt and completed chat history only. Local archives are explicit, plaintext, and exclude credentials and unsent drafts.").FontSize(fontSmall)
 		ui.Column(c).Gap(spaceSection).Children(func() {
 			for i, turn := range state.Turns {
 				ui.Column(c.Key("turn-"+strconv.Itoa(i))).Gap(4).Children(func() {
@@ -111,34 +141,6 @@ func (s *shell) renderChat(c *ui.Context, snapshot core.WorkspaceSnapshot, paneI
 				})
 			}
 		})
-	})
-	if state.Active {
-		c.After(100 * time.Millisecond)
-		ui.Text(c, "Generation active")
-		ui.Button(c, "Stop generation").OnClick(func() { ch.chat.Cancel() })
-		return
-	}
-	if ch.confirmConnection {
-		ui.Text(c, "Review the restored endpoint and model. Confirm before allowing future sends.")
-		ui.Button(c, "Confirm restored model").OnClick(func() { ch.confirmConnection = false; s.status = "" })
-	}
-	ui.Row(c).Gap(spaceControl).Wrap().Children(func() {
-		if ch.archiveConfirm {
-			ui.Button(c, "Confirm archive save").OnClick(func() { s.saveChatArchive(ch) })
-			ui.Button(c, "Cancel archive save").OnClick(func() { ch.archiveConfirm = false })
-		} else {
-			ui.Button(c, "Save chat archive").Disabled(len(state.Turns) == 0 || s.statePath == "").OnClick(func() {
-				ch.archiveConfirm = true
-				s.status = "Save this chat locally in plaintext? This replaces this session’s previous archive."
-			})
-		}
-		ui.Button(c, "Load chat archive").Disabled(!canLoadChatArchive(ch) || s.statePath == "").OnClick(func() { s.loadChatArchive(ch) })
-	})
-	ui.TextInput(c, &ch.apiKey).Password().MaxLength(8192).Label("API key (optional; cleared on send)")
-	ui.TextArea(c, &ch.draft).Label("Message").Height(80).MaxLength(8192)
-	ui.Row(c).Gap(spaceControl).Children(func() {
-		ui.Button(c, "Send message").Disabled(ch.confirmConnection || strings.TrimSpace(ch.draft) == "").OnClick(func() { s.sendChat(ch) })
-		ui.Button(c, "Clear conversation").Disabled(len(state.Turns) == 0).OnClick(func() { s.clearChat(ch) })
 	})
 }
 

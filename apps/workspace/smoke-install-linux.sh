@@ -7,6 +7,7 @@ if [[ $# -lt 1 || $# -gt 2 || ( $# == 2 && $2 != --deb-installed ) ]]; then
 fi
 dist=$(cd "$1" && pwd -P)
 mode=${2:-}
+probe=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/probe-installed-search-linux.py
 work=$(mktemp -d)
 pid=''
 wid=''
@@ -146,6 +147,39 @@ rm -- "$state"
 xdotool key --clearmodifiers ctrl+s
 wait_for_state
 cmp "$work/expected.json" "$state"
+if [[ -n "${MYGO_XERJ_APP_LIVE_INDEX:-}" ]]; then
+  /usr/bin/python3 "$probe"
+  /usr/bin/python3 "$probe" --workspace
+  # Opening a Search tab changes layout. Save it explicitly before shutdown.
+  rm -- "$state"
+  xdotool key --clearmodifiers ctrl+s
+  wait_for_state
+  python3 - "$state" "$MYGO_XERJ_APP_LIVE_INDEX" <<'PY_CHECK'
+import json, pathlib, sys
+raw = pathlib.Path(sys.argv[1]).read_text()
+snapshot = json.loads(raw)["workspace"]
+panes = snapshot["panes"]
+assert len(panes) == 2 and abs(snapshot["layout"]["ratio"] - 0.5) > 0.02, snapshot
+tabs = [tab["SessionID"] for pane in panes.values() for tab in (pane["tabs"] or [])]
+assert {"browser", "terminal", "notes", "chat", "search"}.issubset(tabs) and "home" not in tabs, tabs
+assert all(pane["tabs"] for pane in panes.values()), panes
+for private in (sys.argv[2], "asterquill", "guide.md", "127.0.0.1:9200"):
+    assert private not in raw.lower(), "Search data was written to workspace state"
+PY_CHECK
+  cp "$state" "$work/full-workspace.json"
+  close_app
+  start_app
+  /usr/bin/python3 "$probe" --check-idle
+  rm -- "$state"
+  xdotool key --clearmodifiers ctrl+s
+  wait_for_state
+  cmp "$work/full-workspace.json" "$state"
+  echo 'PASS: resized divider and tab positions restored byte-for-byte'
+  /usr/bin/python3 "$probe" --check-workspace
+  rm -- "$state"
+  xdotool key --clearmodifiers ctrl+s
+  wait_for_state
+fi
 close_app
 echo 'PASS: installed save, graceful close, restart and restored layout'
 if [[ "$mode" == --deb-installed ]]; then

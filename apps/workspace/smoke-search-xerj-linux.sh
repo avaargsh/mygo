@@ -10,7 +10,7 @@ cleanup() {
     wait "$pid" 2>/dev/null || true
   fi
   if [[ $rc != 0 && -f "$out/server.log" ]]; then
-    tail -100 "$out/server.log" >&2
+    tail -100 "$out/server.log" | sed -E 's/(#token=)[^[:space:]]+/\1[redacted]/g' >&2
   fi
   rm -rf -- "$out"
 }
@@ -35,7 +35,7 @@ fi
 printf '# Queue operations\n\nAsterquill is the synthetic runbook verification marker.\n' >"$out/corpus/guide.md"
 (
   cd "$out"
-  exec "$out/xerj" --insecure --data-dir "$out/data"
+  exec "$out/xerj" --insecure --bind 127.0.0.1 --data-dir "$out/data"
 ) > "$out/server.log" 2>&1 &
 pid=$!
 for ((i=0; i<60; i++)); do
@@ -55,6 +55,9 @@ assert len(rows) == 1, rows
 print(rows[0])
 ')
 echo "Live fixture index: $index"
-# Keep Go caches in the runner workspace while XERJ has a disposable HOME.
-MYGO_XERJ_APP_LIVE_ENDPOINT="$endpoint" MYGO_XERJ_APP_LIVE_INDEX="$index" \
+export MYGO_XERJ_APP_LIVE_ENDPOINT="$endpoint" MYGO_XERJ_APP_LIVE_INDEX="$index"
+if [[ $# -gt 0 ]]; then
+  "$@"
+else
   go test -v -count=1 -timeout=2m -run '^TestWorkspaceLocalSearchLive$' ./apps/workspace/cmd/mygo
+fi

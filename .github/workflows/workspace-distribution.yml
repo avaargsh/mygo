@@ -2,7 +2,7 @@ name: Workspace Distribution
 
 on:
   push:
-    branches: [main, test/workspace-linux-notices, test/workspace-cloud-acceptance]
+    branches: [main, test/workspace-linux-notices, test/workspace-cloud-acceptance, test/workspace-installed-search]
   workflow_dispatch:
 
 permissions:
@@ -26,6 +26,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-0 libayatana-appindicator3-1 xvfb xauth xdotool dbus-x11 libgl1-mesa-dri libglx-mesa0 libegl-mesa0
+          if [[ "$GITHUB_REF" == refs/heads/test/workspace-installed-search ]]; then
+            sudo apt-get install -y --no-install-recommends at-spi2-core python3-pyatspi
+          fi
           bun install --frozen-lockfile
           bun run build
           go mod verify
@@ -62,7 +65,11 @@ jobs:
       - name: Verify installed user application
         run: |
           bash -n apps/workspace/smoke-install-linux.sh
-          xvfb-run -a dbus-run-session -- bash apps/workspace/smoke-install-linux.sh apps/workspace/cmd/mygo/dist/linux-amd64
+          if [[ "$GITHUB_REF" == refs/heads/test/workspace-installed-search ]]; then
+            NO_AT_BRIDGE=0 xvfb-run -a dbus-run-session -- bash apps/workspace/smoke-search-xerj-linux.sh bash apps/workspace/smoke-install-linux.sh apps/workspace/cmd/mygo/dist/linux-amd64
+          else
+            xvfb-run -a dbus-run-session -- bash apps/workspace/smoke-install-linux.sh apps/workspace/cmd/mygo/dist/linux-amd64
+          fi
       - name: Test Debian package writer
         run: go test ./cmd/mygo -run '^TestDebCopyright$' -count=1
       - name: Verify apt-installed application
@@ -71,7 +78,11 @@ jobs:
           test "$(dpkg-query -W -f='${db:Status-Status}' mygo-workspace 2>/dev/null || true)" != installed
           sudo apt-get install -y --no-install-recommends "./$deb"
           trap 'sudo apt-get remove -y mygo-workspace' EXIT
-          xvfb-run -a dbus-run-session -- bash apps/workspace/smoke-install-linux.sh "${deb%/*}" --deb-installed
+          if [[ "$GITHUB_REF" == refs/heads/test/workspace-installed-search ]]; then
+            NO_AT_BRIDGE=0 xvfb-run -a dbus-run-session -- bash apps/workspace/smoke-search-xerj-linux.sh bash apps/workspace/smoke-install-linux.sh "${deb%/*}" --deb-installed
+          else
+            xvfb-run -a dbus-run-session -- bash apps/workspace/smoke-install-linux.sh "${deb%/*}" --deb-installed
+          fi
           sudo apt-get remove -y mygo-workspace
           trap - EXIT
           test ! -e /usr/bin/mygo-workspace && test ! -L /usr/bin/mygo-workspace
