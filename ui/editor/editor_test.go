@@ -497,6 +497,30 @@ func TestCodeEditorMultiCursor(t *testing.T) {
 	ct.want("[a] b [a] c [a]")
 }
 
+// A columnar selection (Alt+Shift drag) goes on as the wheel scrolls the
+// view under the held pointer, to the lines that come under it.
+func TestCodeEditorColumnSelectWheel(t *testing.T) {
+	ct := newEditorTest(t, "", strings.Repeat("abcdefghij\n", 200))
+	ed := &ct.st.ed
+	lh := ed.view.lineHeight
+	x0, x1 := ed.textX+ed.view.charWidth*2, ed.textX+ed.view.charWidth*5
+	ed.input(ui.InputEvent{Kind: ui.InputPointerDown, X: x0, Y: lh / 2, Mods: ui.Alt | ui.Shift, Clicks: 1})
+	ed.input(ui.InputEvent{Kind: ui.InputPointerMove, X: x1, Y: lh*3 + lh/2})
+	if n := len(ed.sels); n != 4 {
+		t.Fatalf("dragged over 4 lines, selected %d", n)
+	}
+	ed.input(ui.InputEvent{Kind: ui.InputScroll, DY: lh * 2})
+	ed.input(ui.InputEvent{Kind: ui.InputPointerUp, X: x1, Y: lh*3 + lh/2})
+	if n := len(ed.sels); n != 6 {
+		t.Fatalf("after scrolling 2 lines, %d selected, want 6", n)
+	}
+	for _, s := range ed.sels {
+		if s.end()-s.start() != 3 {
+			t.Fatalf("selection %+v isn't the 3 columns dragged over", s)
+		}
+	}
+}
+
 func TestCodeEditorLines(t *testing.T) {
 	ct := newEditorTest(t, "go", "one\ntw|o\nthree")
 	ct.key(ui.Alt, ui.KeyUp)
@@ -602,6 +626,94 @@ func TestCodeEditorClipboard(t *testing.T) {
 	ct = newEditorTest(t, "", "a[b]c")
 	ct.typ("b")
 	ct.want("ab|c")
+}
+
+func TestCodeEditorMultiCursorPaste(t *testing.T) {
+	oldClip := lastClip
+	t.Cleanup(func() { lastClip = oldClip })
+
+	for _, tc := range []struct {
+		name string
+		init string
+		clip string
+		want string
+	}{
+		{name: "carets", init: "a|\nb|", clip: "1\n2", want: "a1|\nb2|"},
+		{name: "selections", init: "[a]\n[b]", clip: "1\n2", want: "1|\n2|"},
+		{name: "adjacent-selections", init: "[ab][ab]", clip: "x\ny", want: "x|y|"},
+		{name: "trailing-newline", init: "a|\nb|", clip: "1\n2\n", want: "a1|\nb2|"},
+		{name: "single-line-trailing-newline", init: "a|\nb|", clip: "1\n", want: "a1\n|\nb1\n|"},
+		{name: "mismatched-line-count", init: "a|\nb|", clip: "1\n2\n3", want: "a1\n2\n3|\nb1\n2\n3|"},
+		{name: "trailing-blank-line", init: "[a]\n[b]", clip: "1\n\n", want: "1|\n|"},
+		{name: "trailing-blank-line-mismatch", init: "a|\nb|\nc|", clip: "1\n\n", want: "a1\n\n|\nb1\n\n|\nc1\n\n|"},
+		{name: "two-blank-lines", init: "[a]\n[b]", clip: "\n\n", want: "|\n|"},
+		{name: "single-newline", init: "a|\nb|", clip: "\n", want: "a\n|\nb\n|"},
+		{name: "crlf", init: "a|\nb|", clip: "1\r\n2\r\n", want: "a1|\nb2|"},
+		{name: "cr", init: "a|\nb|", clip: "1\r2\r", want: "a1|\nb2|"},
+		{name: "single-cursor-trailing-newline", init: "a|", clip: "1\n", want: "a1\n|"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			lastClip = clipboard{}
+			ct := newEditorTest(t, "", tc.init)
+			ct.tt.SetClipboard(tc.clip)
+			ct.key(ui.Cmd, ui.KeyV)
+			ct.want(tc.want)
+		})
+	}
+
+	t.Run("insert-keeps-full-text", func(t *testing.T) {
+		lastClip = clipboard{}
+		ct := newEditorTest(t, "", "a|\nb|")
+		ct.st.Insert("1\n2")
+		ct.tt.Frame()
+		ct.want("a1\n2|\nb1\n2|")
+	})
+
+	t.Run("single-cursor-cr-preserved", func(t *testing.T) {
+		lastClip = clipboard{}
+		ct := newEditorTest(t, "", "|")
+		ct.tt.SetClipboard("one\rtwo")
+		ct.key(ui.Cmd, ui.KeyV)
+		if got := written(t, ct.st.Buffer); got != "one\rtwo" {
+			t.Fatalf("written %q, want %q", got, "one\rtwo")
+		}
+	})
+
+	t.Run("internal-multiline-selection", func(t *testing.T) {
+		src := newEditorTest(t, "", "[one\ntwo\n]")
+		src.key(ui.Cmd, ui.KeyC)
+		dst := newEditorTest(t, "", "a|\nb|")
+		dst.tt.SetClipboard(src.tt.Clipboard())
+		dst.key(ui.Cmd, ui.KeyV)
+		dst.want("aone|\nbtwo|")
+	})
+
+	t.Run("preserve-lastclip-whole-line-single-to-multi", func(t *testing.T) {
+		src := newEditorTest(t, "", "o|ne\ntwo")
+		src.key(ui.Cmd, ui.KeyC)
+		dst := newEditorTest(t, "", "a|\nb|")
+		dst.tt.SetClipboard(src.tt.Clipboard())
+		dst.key(ui.Cmd, ui.KeyV)
+		dst.want("one\na|\none\nb|")
+	})
+
+	t.Run("preserve-lastclip-whole-line-multi-to-multi", func(t *testing.T) {
+		src := newEditorTest(t, "", "o|ne\nt|wo")
+		src.key(ui.Cmd, ui.KeyC)
+		dst := newEditorTest(t, "", "a|\nb|")
+		dst.tt.SetClipboard(src.tt.Clipboard())
+		dst.key(ui.Cmd, ui.KeyV)
+		dst.want("one\na|\ntwo\nb|")
+	})
+
+	t.Run("preserve-lastclip-multiline-pieces", func(t *testing.T) {
+		src := newEditorTest(t, "", "[a\nb] [c\nd]")
+		src.key(ui.Cmd, ui.KeyC)
+		dst := newEditorTest(t, "", "x|\ny|")
+		dst.tt.SetClipboard(src.tt.Clipboard())
+		dst.key(ui.Cmd, ui.KeyV)
+		dst.want("xa\nb|\nyc\nd|")
+	})
 }
 
 func TestCodeEditorComposition(t *testing.T) {
