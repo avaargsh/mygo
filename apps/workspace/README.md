@@ -44,6 +44,9 @@ retain their own values and keyboard focus works. These are manual acceptance
 steps, not verified desktop test results. The probe uses local HTML and
 untrusted page options; it does not establish browser storage isolation.
 
+The [Content Lifecycle Contract](content-lifecycle.md) defines the shared
+ownership and restore rules for providers, instances, sessions, views and executions.
+
 ## Architecture and status
 
 - core owns tab identity, ordering and active selection; a tab is a view
