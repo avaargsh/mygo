@@ -39,9 +39,10 @@ type workspaceSelection struct {
 // The caller serializes changes. One record per workspace keeps concurrent
 // creations from overwriting each other.
 type WorkspaceCatalog struct {
-	root     string
-	active   string
-	profiles []WorkspaceProfile
+	root                  string
+	active                string
+	profiles              []WorkspaceProfile
+	missingSavedWorkspace bool
 }
 
 func OpenWorkspaceCatalog(root string) (*WorkspaceCatalog, error) {
@@ -54,11 +55,18 @@ func OpenWorkspaceCatalog(root string) (*WorkspaceCatalog, error) {
 		return nil, err
 	case saved.Version != 1 || !validWorkspaceID(saved.ID):
 		return nil, errors.New("invalid workspace selection")
-	default:
-		c.active = saved.ID
 	}
 	if err := c.Refresh(); err != nil {
 		return nil, err
+	}
+	if saved.ID != "" {
+		if slices.ContainsFunc(c.profiles, func(p WorkspaceProfile) bool { return p.ID == saved.ID }) {
+			c.active = saved.ID
+		} else {
+			// Keep the saved selection intact so restoring the workspace directory
+			// later makes the original selection usable again.
+			c.missingSavedWorkspace = true
+		}
 	}
 	return c, nil
 }
@@ -154,6 +162,10 @@ func validWorkspaceName(name string) bool {
 
 func (c *WorkspaceCatalog) Profiles() []WorkspaceProfile { return slices.Clone(c.profiles) }
 
+// MissingSavedWorkspace reports whether startup fell back to Default because
+// the saved workspace directory was absent.
+func (c *WorkspaceCatalog) MissingSavedWorkspace() bool { return c.missingSavedWorkspace }
+
 func (c *WorkspaceCatalog) Active() WorkspaceProfile {
 	index := slices.IndexFunc(c.profiles, func(p WorkspaceProfile) bool { return p.ID == c.active })
 	return c.profiles[index]
@@ -247,6 +259,7 @@ func (c *WorkspaceCatalog) Select(id string) error {
 		return err
 	}
 	c.active = id
+	c.missingSavedWorkspace = false
 	return nil
 }
 

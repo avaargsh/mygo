@@ -108,3 +108,61 @@ func TestWorkspaceChooserIsolatesDataAndRestoresSelection(t *testing.T) {
 		t.Fatalf("workspace did not write a valid snapshot at its own path: %v", err)
 	}
 }
+
+func TestWorkspaceStartupUsesDefaultWhenSelectedWorkspaceIsMissing(t *testing.T) {
+	dir := t.TempDir()
+	notePath := filepath.Join(dir, "notes.md")
+	if err := os.WriteFile(notePath, []byte("default note"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := core.OpenWorkspaceCatalog(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile, err := catalog.Create("Research")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := catalog.Select(profile.ID); err != nil {
+		t.Fatal(err)
+	}
+	selectionPath := filepath.Join(dir, "active-workspace.json")
+	selection, err := os.ReadFile(selectionPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	profileDir, err := catalog.Directory(profile.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(profileDir, profileDir+".backup"); err != nil {
+		t.Fatal(err)
+	}
+
+	h, err := newWorkspaceHost(dir)
+	if err != nil {
+		t.Fatalf("open workspace after selected directory went missing: %v", err)
+	}
+	if h.current.profile.ID != core.DefaultWorkspaceID || !strings.Contains(h.current.status, "missing") {
+		t.Fatalf("missing selection was not reported on the default workspace: %+v, %q", h.current.profile, h.current.status)
+	}
+	tt := ui.NewTester(h.view, 1200, 800)
+	tt.Frame()
+	if err := tt.Click("Notes"); err != nil {
+		t.Fatal(err)
+	}
+	if h.current.note() == nil || h.current.note().Text != "default note" {
+		t.Fatal("default workspace did not reopen its original note")
+	}
+	if got, err := os.ReadFile(selectionPath); err != nil || string(got) != string(selection) {
+		t.Fatalf("startup rewrote the original selection: %q, %v", got, err)
+	}
+
+	if err := os.Rename(profileDir+".backup", profileDir); err != nil {
+		t.Fatal(err)
+	}
+	restored, err := newWorkspaceHost(dir)
+	if err != nil || restored.current.profile != profile {
+		t.Fatalf("restored profile was not selected: %v", err)
+	}
+}

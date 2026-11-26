@@ -34,6 +34,9 @@ func newWorkspaceHost(dir string) (*workspaceHost, error) {
 	if err := h.useWorkspace(catalog.Active()); err != nil {
 		return nil, err
 	}
+	if catalog.MissingSavedWorkspace() {
+		h.current.status = "The last workspace folder is missing. Opened Default without changing the saved selection."
+	}
 	return h, nil
 }
 

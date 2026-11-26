@@ -108,3 +108,28 @@ func TestWorkspaceCatalogRejectsOutsideSelection(t *testing.T) {
 		t.Fatal("invalid workspace path was accepted")
 	}
 }
+
+func TestWorkspaceCatalogDoesNotTreatMalformedProfileAsMissing(t *testing.T) {
+	root := t.TempDir()
+	catalog, err := OpenWorkspaceCatalog(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile, err := catalog.Create("Research")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := catalog.Select(profile.ID); err != nil {
+		t.Fatal(err)
+	}
+	dir, err := catalog.Directory(profile.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "profile.json"), []byte("invalid"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := OpenWorkspaceCatalog(root); err == nil {
+		t.Fatal("startup hid the error in an existing workspace profile")
+	}
+}
