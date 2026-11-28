@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/egoist/mygo"
@@ -31,8 +32,14 @@ func newWorkspaceHost(dir string) (*workspaceHost, error) {
 		return nil, err
 	}
 	h := &workspaceHost{catalog: catalog, loaded: make(map[string]*shell)}
-	if err := h.useWorkspace(catalog.Active()); err != nil {
+	profile := catalog.Active()
+	initial, err := h.loadWorkspace(profile)
+	if err != nil {
 		return nil, err
+	}
+	h.loaded[profile.ID], h.current = initial, initial
+	if catalog.MissingSavedWorkspace() {
+		h.current.status = "The last workspace folder is missing. Opened Default without changing the saved selection."
 	}
 	return h, nil
 }
@@ -46,8 +53,12 @@ func (h *workspaceHost) useWorkspace(profile core.WorkspaceProfile) error {
 			return err
 		}
 	}
+	keepingDefault := profile.ID == core.DefaultWorkspaceID && h.catalog.MissingSavedWorkspace()
 	if err := h.catalog.Select(profile.ID); err != nil {
 		return err
+	}
+	if keepingDefault {
+		s.status = "Default will open on startup."
 	}
 	h.loaded[profile.ID], h.current = s, s
 	if h.window != nil {
@@ -139,6 +150,9 @@ func (h *workspaceHost) renderChooser(c *ui.Context) {
 					}
 					if profile.ID == h.current.profile.ID {
 						ui.Text(c.Key(profile.ID), "Current workspace: "+label).Bold()
+						if h.catalog.MissingSavedWorkspace() {
+							ui.Button(c.Key("keep-default"), "Keep Default on startup").OnClick(func() { h.selectWorkspace(profile) })
+						}
 					} else {
 						ui.Button(c.Key(profile.ID), "Switch to "+label).OnClick(func() { h.selectWorkspace(profile) })
 					}
@@ -160,16 +174,33 @@ func (h *workspaceHost) confirmClose(dialog func(mygo.MessageOptions) (mygo.Mess
 	if !h.current.confirmClose(dialog) {
 		return false
 	}
-	for _, profile := range h.catalog.Profiles() {
-		s := h.loaded[profile.ID]
-		if s != nil && s != h.current {
-			status := s.status
-			if !s.confirmClose(dialog) {
-				if s.status != status {
-					h.current.status = profile.Name + ": " + s.status
-				}
-				return false
+	// Disk discovery can drop a profile while its loaded shell still owns
+	// unsaved edits. Check the live shells, not the chooser inventory.
+	var hidden []*shell
+	for _, s := range h.loaded {
+		if s != h.current {
+			hidden = append(hidden, s)
+		}
+	}
+	slices.SortFunc(hidden, func(a, b *shell) int {
+		if aDefault, bDefault := a.profile.ID == core.DefaultWorkspaceID, b.profile.ID == core.DefaultWorkspaceID; aDefault != bDefault {
+			if aDefault {
+				return -1
 			}
+			return 1
+		}
+		if cmp := strings.Compare(strings.ToLower(a.profile.Name), strings.ToLower(b.profile.Name)); cmp != 0 {
+			return cmp
+		}
+		return strings.Compare(a.profile.ID, b.profile.ID)
+	})
+	for _, s := range hidden {
+		status := s.status
+		if !s.confirmClose(dialog) {
+			if s.status != status {
+				h.current.status = s.profile.Name + ": " + s.status
+			}
+			return false
 		}
 	}
 	return true

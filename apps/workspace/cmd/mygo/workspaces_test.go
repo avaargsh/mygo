@@ -108,3 +108,150 @@ func TestWorkspaceChooserIsolatesDataAndRestoresSelection(t *testing.T) {
 		t.Fatalf("workspace did not write a valid snapshot at its own path: %v", err)
 	}
 }
+
+func TestWorkspaceStartupUsesDefaultWhenSelectedWorkspaceIsMissing(t *testing.T) {
+	dir := t.TempDir()
+	notePath := filepath.Join(dir, "notes.md")
+	if err := os.WriteFile(notePath, []byte("default note"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := core.OpenWorkspaceCatalog(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile, err := catalog.Create("Research")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := catalog.Select(profile.ID); err != nil {
+		t.Fatal(err)
+	}
+	selectionPath := filepath.Join(dir, "active-workspace.json")
+	selection, err := os.ReadFile(selectionPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	profileDir, err := catalog.Directory(profile.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(profileDir, profileDir+".backup"); err != nil {
+		t.Fatal(err)
+	}
+
+	h, err := newWorkspaceHost(dir)
+	if err != nil {
+		t.Fatalf("open workspace after selected directory went missing: %v", err)
+	}
+	if h.current.profile.ID != core.DefaultWorkspaceID || !strings.Contains(h.current.status, "missing") {
+		t.Fatalf("missing selection was not reported on the default workspace: %+v, %q", h.current.profile, h.current.status)
+	}
+	tt := ui.NewTester(h.view, 1200, 800)
+	tt.Frame()
+	if err := tt.Click("Notes"); err != nil {
+		t.Fatal(err)
+	}
+	if h.current.note() == nil || h.current.note().Text != "default note" {
+		t.Fatal("default workspace did not reopen its original note")
+	}
+	if got, err := os.ReadFile(selectionPath); err != nil || string(got) != string(selection) {
+		t.Fatalf("startup rewrote the original selection: %q, %v", got, err)
+	}
+
+	if err := os.Rename(profileDir+".backup", profileDir); err != nil {
+		t.Fatal(err)
+	}
+	restored, err := newWorkspaceHost(dir)
+	if err != nil || restored.current.profile != profile {
+		t.Fatalf("restored profile was not selected: %v", err)
+	}
+
+	// This time deliberately keep Default before restoring the old directory.
+	if err := os.Rename(profileDir, profileDir+".backup"); err != nil {
+		t.Fatal(err)
+	}
+	h, err = newWorkspaceHost(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tt = ui.NewTester(h.view, 1200, 800)
+	tt.Frame()
+	if err := tt.Click("Workspaces"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if err := tt.Click("Keep Default on startup"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(profileDir+".backup", profileDir); err != nil {
+		t.Fatal(err)
+	}
+	kept, err := newWorkspaceHost(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if kept.current.profile.ID != core.DefaultWorkspaceID || kept.catalog.MissingSavedWorkspace() {
+		t.Fatal("an explicit Default selection did not survive restart")
+	}
+}
+
+func TestClosingChecksDirtyWorkspaceAfterItsDirectoryIsMoved(t *testing.T) {
+	dir := t.TempDir()
+	h, err := newWorkspaceHost(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defaultProfile := h.current.profile
+	h.newName = "Research"
+	h.createWorkspace()
+	research := h.current
+	if research.profile == defaultProfile || h.chooserErr != "" {
+		t.Fatalf("create Research: %s", h.chooserErr)
+	}
+	research.open("notes")
+	research.note().Text = "still in memory"
+	h.selectWorkspace(defaultProfile)
+	if h.current.profile != defaultProfile || h.chooserErr != "" {
+		t.Fatalf("switch back to Default: %s", h.chooserErr)
+	}
+	researchDir, err := h.catalog.Directory(research.profile.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(researchDir, researchDir+".backup"); err != nil {
+		t.Fatal(err)
+	}
+
+	h.showChooser()
+	if h.chooserErr != "" || len(h.catalog.Profiles()) != 1 {
+		t.Fatalf("expected only Default after refresh: %v, %s", h.catalog.Profiles(), h.chooserErr)
+	}
+	var dialogs int
+	if h.confirmClose(func(opts mygo.MessageOptions) (mygo.MessageResult, error) {
+		dialogs++
+		if !strings.Contains(opts.Message, "Research") {
+			t.Fatalf("wrong workspace in close prompt: %q", opts.Message)
+		}
+		return mygo.MessageResult{Button: closeCancel}, nil
+	}) {
+		t.Fatal("quit ignored the unsaved note in the loaded Research workspace")
+	}
+	if dialogs != 1 || !research.note().Dirty() || research.note().Text != "still in memory" {
+		t.Fatal("cancel did not preserve the removed workspace's note in memory")
+	}
+	save := func(mygo.MessageOptions) (mygo.MessageResult, error) {
+		return mygo.MessageResult{Button: closeSave}, nil
+	}
+	if h.confirmClose(save) || !research.note().Dirty() || !strings.Contains(h.current.status, "Research: Note save failed") {
+		t.Fatal("a save failure should keep the window and unsaved edits")
+	}
+	if err := os.Rename(researchDir+".backup", researchDir); err != nil {
+		t.Fatal(err)
+	}
+	if !h.confirmClose(save) || research.note().Dirty() {
+		t.Fatal("restoring the directory should let the user save and exit")
+	}
+	if got, err := os.ReadFile(filepath.Join(researchDir, "notes.md")); err != nil || string(got) != "still in memory" {
+		t.Fatalf("note missing after saving to the restored directory: %q, %v", got, err)
+	}
+}
