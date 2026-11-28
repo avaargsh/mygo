@@ -234,7 +234,8 @@ main() {
 }
 
 linux() {
-	app_dir="$HOME/.local/$name.app"
+	local_dir="$HOME/.local"
+	app_dir="$local_dir/$name.app"
 	bin_dir="$HOME/.local/bin"
 	data_home="${XDG_DATA_HOME:-$HOME/.local/share}"
 	desktop_file="$data_home/applications/$name.desktop"
@@ -256,8 +257,11 @@ linux() {
 	esac
 
 	work="$(mktemp -d)"
-	staging="$HOME/.local/.$name.app.install"
-	trap 'rm -rf "$work" "$staging"' EXIT
+	transaction=
+	old_bundle=
+	installed=
+	registered=
+	trap cleanup_linux_install EXIT
 	trap 'exit 1' HUP INT TERM
 
 	archive="${1:-}"
@@ -298,13 +302,22 @@ linux() {
 	fi
 
 	echo "Installing $app_name in $app_dir"
-	rm -rf "$staging"
-	mkdir -p "$staging"
-	tar -xzf "$archive" -C "$staging"
-	[ -f "$staging/$name" ] && [ -x "$staging/$name" ] || fail "$archive is not $app_name: it holds no $name"
-	# Replace the app as a whole, so that no file of another version stays.
-	rm -rf "$app_dir"
-	mv "$staging" "$app_dir"
+	mkdir -p "$local_dir"
+	transaction="$(mktemp -d "$local_dir/.$name.app.install.XXXXXX")"
+	new_bundle="$transaction/new/$name.app"
+	old_bundle="$transaction/previous/$name.app"
+	mkdir -p "$new_bundle" "$transaction/previous"
+	tar -xzf "$archive" -C "$new_bundle"
+	[ -f "$new_bundle/$name" ] && [ -x "$new_bundle/$name" ] ||
+		fail "$archive is not $app_name: it holds no $name"
+	# Keep the previous bundle on the same filesystem until the new one is in place.
+	if [ -e "$app_dir" ] || [ -L "$app_dir" ]; then
+		mv "$app_dir" "$transaction/previous" || fail "could not move the previous installation"
+	fi
+	# Move to the parent using the final basename. If another install fills
+	# app_dir, mv must not treat that bundle as a directory to move into.
+	mv "$new_bundle" "$local_dir" || fail "could not put the new installation in place"
+	installed=yes
 
 	mkdir -p "$data_home/applications"
 	# Earlier install scripts linked a command named after the app. Links of
@@ -349,6 +362,7 @@ linux() {
 		rm -f "$mime_file"
 	fi
 	update_databases
+	registered=yes
 
 	if [ -n "$run" ]; then
 		echo "Installed $app_name: open it from the applications menu, or run $run"
@@ -361,6 +375,23 @@ linux() {
 		echo "  $(webkit_install_command)" >&2
 	fi
 {{- end}}
+}
+# Restore after placement failure, or preserve the previous bundle if
+# launcher registration fails after successful placement.
+cleanup_linux_install() {
+	rm -rf "$work"
+	[ -n "$transaction" ] || return 0
+	if [ -z "$registered" ] && { [ -e "$old_bundle" ] || [ -L "$old_bundle" ]; }; then
+		if [ -n "$installed" ]; then
+			echo "install.sh: launcher registration was incomplete; the previous installation is still at $old_bundle" >&2
+			return 0
+		fi
+		if [ -e "$app_dir" ] || [ -L "$app_dir" ] || ! mv "$old_bundle" "$local_dir"; then
+			echo "install.sh: could not restore the previous installation; it is still at $old_bundle" >&2
+			return 0
+		fi
+	fi
+	rm -rf "$transaction"
 }
 {{- if .Updates}}
 

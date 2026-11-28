@@ -228,6 +228,99 @@ func TestInstallScript(t *testing.T) {
 	t.Setenv("PATH", path)
 	installed("1.0.0")
 
+	// Failing the final move after staging a valid upgrade must not remove
+	// the working bundle or its existing command links.
+	realMV, err := exec.LookPath("mv")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mv := filepath.Join(bin, "mv")
+	failReplacement := `#!/bin/sh
+case "$1" in
+  */new|*/new/my-app.app|*/.my-app.app.install)
+    if [ -z "${MYGO_TEST_COMPETING_APP:-}" ]; then
+      exit 73
+    fi
+    mkdir "$MYGO_TEST_COMPETING_APP" || exit 75
+    printf '%s' competing >"$MYGO_TEST_COMPETING_APP/my-app"
+    ;;
+esac
+exec "$MYGO_TEST_REAL_MV" "$@"
+`
+	if err := os.WriteFile(mv, []byte(failReplacement), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("MYGO_TEST_REAL_MV", realMV)
+	upgrade := filepath.Join(published, "my-app-1.1.0-linux-amd64.tar.gz")
+	t.Setenv("MYGO_TEST_COMPETING_APP", "")
+	out, upgradeErr := exec.Command("sh", alone, upgrade).CombinedOutput()
+	if upgradeErr == nil {
+		t.Fatalf("upgrade unexpectedly succeeded:\n%s", out)
+	}
+	installed("1.0.0")
+	if got, err := exec.Command(filepath.Join(binDir, "my-app")).Output(); err != nil || string(got) != "1.0.0\n" {
+		t.Fatalf("old command after failed upgrade = %q, %v", got, err)
+	}
+
+	// A competing placement after the old bundle is moved must not make
+	// mv nest the staged bundle inside the new destination and report success.
+	t.Setenv("MYGO_TEST_COMPETING_APP", appDir)
+	out, upgradeErr = exec.Command("sh", alone, upgrade).CombinedOutput()
+	if err := os.Remove(mv); err != nil {
+		t.Fatal(err)
+	}
+	if upgradeErr == nil {
+		t.Fatalf("upgrade over a competing bundle reported success:\n%s", out)
+	}
+	if entries, err := os.ReadDir(appDir); err != nil || len(entries) != 1 || entries[0].Name() != "my-app" {
+		t.Fatalf("upgrade modified the competing bundle: %v, %v", entries, err)
+	}
+	if got, err := os.ReadFile(filepath.Join(appDir, "my-app")); err != nil || string(got) != "competing" {
+		t.Fatalf("competing executable = %q, %v", got, err)
+	}
+	backups, err := filepath.Glob(filepath.Join(home, ".local", ".my-app.app.install.*", "previous", "my-app.app"))
+	if err != nil || len(backups) != 1 || !strings.Contains(string(out), backups[0]) {
+		t.Fatalf("expected one reported previous bundle, got %v, %v:\n%s", backups, err, out)
+	}
+	if err := os.RemoveAll(appDir); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(backups[0], appDir); err != nil {
+		t.Fatal(err)
+	}
+	installed("1.0.0")
+
+	// If desktop registration fails after placement, keep the previous
+	// executable recoverable without undoing partially updated launchers.
+	badDataHome := filepath.Join(t.TempDir(), "not-a-directory")
+	if err := os.WriteFile(badDataHome, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	originalDataHome := os.Getenv("XDG_DATA_HOME")
+	t.Setenv("XDG_DATA_HOME", badDataHome)
+	out, upgradeErr = exec.Command("sh", alone, upgrade).CombinedOutput()
+	t.Setenv("XDG_DATA_HOME", originalDataHome)
+	if upgradeErr == nil || strings.Contains(string(out), "Installed My App:") {
+		t.Fatalf("desktop registration failure reported success: %v\n%s", upgradeErr, out)
+	}
+	if got, err := exec.Command(filepath.Join(binDir, "my-app")).Output(); err != nil || string(got) != "1.1.0\n" {
+		t.Fatalf("placed bundle command after registration failure = %q, %v", got, err)
+	}
+	backups, err = filepath.Glob(filepath.Join(home, ".local", ".my-app.app.install.*", "previous", "my-app.app"))
+	if err != nil || len(backups) != 1 || !strings.Contains(string(out), backups[0]) {
+		t.Fatalf("expected one reported previous bundle after registration failure, got %v, %v:\n%s", backups, err, out)
+	}
+	if got, err := exec.Command(filepath.Join(backups[0], "my-app")).Output(); err != nil || string(got) != "1.0.0\n" {
+		t.Fatalf("preserved previous executable = %q, %v", got, err)
+	}
+	if err := os.RemoveAll(appDir); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(backups[0], appDir); err != nil {
+		t.Fatal(err)
+	}
+	installed("1.0.0")
+
 	// It warns when the library cache has no WebKitGTK, and only then.
 	libc := "\tlibc.so.6 (libc6,x86-64, OS ABI: Linux 3.2.0) => /lib/x86_64-linux-gnu/libc.so.6\n"
 	for _, cache := range []struct {
