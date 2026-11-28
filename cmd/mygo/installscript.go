@@ -260,6 +260,7 @@ linux() {
 	transaction=
 	old_bundle=
 	installed=
+	registered=
 	trap cleanup_linux_install EXIT
 	trap 'exit 1' HUP INT TERM
 
@@ -361,6 +362,7 @@ linux() {
 		rm -f "$mime_file"
 	fi
 	update_databases
+	registered=yes
 
 	if [ -n "$run" ]; then
 		echo "Installed $app_name: open it from the applications menu, or run $run"
@@ -374,11 +376,16 @@ linux() {
 	fi
 {{- end}}
 }
-# Remove temporary files, restoring the previous installation on failure.
+# Restore after placement failure, or preserve the previous bundle if
+# launcher registration fails after successful placement.
 cleanup_linux_install() {
 	rm -rf "$work"
 	[ -n "$transaction" ] || return 0
-	if [ -z "$installed" ] && { [ -e "$old_bundle" ] || [ -L "$old_bundle" ]; }; then
+	if [ -z "$registered" ] && { [ -e "$old_bundle" ] || [ -L "$old_bundle" ]; }; then
+		if [ -n "$installed" ]; then
+			echo "install.sh: launcher registration was incomplete; the previous installation is still at $old_bundle" >&2
+			return 0
+		fi
 		if [ -e "$app_dir" ] || [ -L "$app_dir" ] || ! mv "$old_bundle" "$local_dir"; then
 			echo "install.sh: could not restore the previous installation; it is still at $old_bundle" >&2
 			return 0

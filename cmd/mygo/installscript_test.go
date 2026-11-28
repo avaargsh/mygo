@@ -290,6 +290,37 @@ exec "$MYGO_TEST_REAL_MV" "$@"
 	}
 	installed("1.0.0")
 
+	// If desktop registration fails after placement, keep the previous
+	// executable recoverable without undoing partially updated launchers.
+	badDataHome := filepath.Join(t.TempDir(), "not-a-directory")
+	if err := os.WriteFile(badDataHome, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	originalDataHome := os.Getenv("XDG_DATA_HOME")
+	t.Setenv("XDG_DATA_HOME", badDataHome)
+	out, upgradeErr = exec.Command("sh", alone, upgrade).CombinedOutput()
+	t.Setenv("XDG_DATA_HOME", originalDataHome)
+	if upgradeErr == nil || strings.Contains(string(out), "Installed My App:") {
+		t.Fatalf("desktop registration failure reported success: %v\n%s", upgradeErr, out)
+	}
+	if got, err := exec.Command(filepath.Join(binDir, "my-app")).Output(); err != nil || string(got) != "1.1.0\n" {
+		t.Fatalf("placed bundle command after registration failure = %q, %v", got, err)
+	}
+	backups, err = filepath.Glob(filepath.Join(home, ".local", ".my-app.app.install.*", "previous", "my-app.app"))
+	if err != nil || len(backups) != 1 || !strings.Contains(string(out), backups[0]) {
+		t.Fatalf("expected one reported previous bundle after registration failure, got %v, %v:\n%s", backups, err, out)
+	}
+	if got, err := exec.Command(filepath.Join(backups[0], "my-app")).Output(); err != nil || string(got) != "1.0.0\n" {
+		t.Fatalf("preserved previous executable = %q, %v", got, err)
+	}
+	if err := os.RemoveAll(appDir); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(backups[0], appDir); err != nil {
+		t.Fatal(err)
+	}
+	installed("1.0.0")
+
 	// It warns when the library cache has no WebKitGTK, and only then.
 	libc := "\tlibc.so.6 (libc6,x86-64, OS ABI: Linux 3.2.0) => /lib/x86_64-linux-gnu/libc.so.6\n"
 	for _, cache := range []struct {
