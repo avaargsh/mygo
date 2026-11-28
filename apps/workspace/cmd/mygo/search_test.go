@@ -104,14 +104,74 @@ func TestWorkspaceSearchCancellationDropsLateResponse(t *testing.T) {
 	}))
 	defer server.Close()
 	f := &searchSession{endpoint: server.URL, index: "notes", query: "first"}
-	f.start(nil)
+	redraw := make(chan struct{}, 1)
+	f.start(func() {
+		select {
+		case redraw <- struct{}{}:
+		default:
+		}
+	})
 	defer f.stop()
 	wait.For(t, "request to start", received)
 	old := f.pending
 	f.stop()
-	wait.For(t, "canceled request to finish", old)
+	if f.draining != old || f.pending != nil || f.result != nil {
+		t.Fatal("cancel did not retain only the cleanup fence")
+	}
+	wait.For(t, "canceled request to notify cleanup", redraw)
 	f.collect()
+	if f.draining != nil || f.pending != nil || f.result != nil {
+		t.Fatal("canceled request did not drain or repopulated the view")
+	}
+}
+
+func TestWorkspaceSessionManagerCanCancelHiddenSearch(t *testing.T) {
+	received, canceled := make(chan struct{}), make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		close(received)
+		<-r.Context().Done()
+		close(canceled)
+	}))
+	defer server.Close()
+	w, err := core.NewWorkspace("root")
+	if err != nil {
+		t.Fatal(err)
+	}
+	content, err := builtInContent(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &shell{workspace: w, content: content, theme: "system"}
+	s.open("home")
+	tt := ui.NewTester(s.view, 1600, 900)
+	if err := tt.Click("Search"); err != nil {
+		t.Fatal(err)
+	}
+	f := s.searchSession()
+	defer f.stop()
+	f.endpoint, f.index, f.query = server.URL, "notes", "report"
+	tt.Frame()
+	if err := tt.Click("Find passages"); err != nil {
+		t.Fatal(err)
+	}
+	wait.For(t, "request to reach the local index", received)
+	pending := f.pending
+	s.open("home")
+	tt.Frame()
+	if f.pending != pending || core.SessionOwner(w.Snapshot(), "search") != "" {
+		t.Fatal("switching tabs canceled the request or left Search visible")
+	}
+	if err := tt.Click("Sessions"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if err := tt.Click("Cancel hidden search"); err != nil {
+		t.Fatal(err)
+	}
+	wait.For(t, "server context cancellation", canceled)
+	wait.For(t, "canceled worker to finish", pending)
 	if f.pending != nil || f.result != nil {
-		t.Fatal("canceled request repopulated the view")
+		t.Fatal("hidden search remained active or restored a canceled result")
 	}
 }

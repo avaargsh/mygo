@@ -457,14 +457,16 @@ locally; a successful Actions run is not yet established.
 Open **Search** in the toolbar or choose **Open Search** from Commands.
 Enter the numeric loopback HTTP origin of a running XERJ node (default
 `http://127.0.0.1:9200`), its exact index slug (not a project or folder
-name), and search text. Choose **Find passages**. Results show a source
-path, a line when supplied and supported by the passage offset, and a
-plain-text excerpt. A source is a label, not a link or a verified citation.
+name), and search text. Choose **Find passages** or press Enter in the search
+field. Results show a source path, a line when supplied and supported by the
+passage offset, and a plain-text excerpt. A source is a label, not a link or a verified citation.
 
 See [the XERJ adapter guide](../../plugins/xerj/README.md) to prepare a local
 node and look up its indexed slug. MyGo does not install or start XERJ,
 scan folders, create indices, or contact a remote node. Connection settings,
-queries and results are not written to workspace state. A saved Search tab
+queries and results are not written to workspace state. Switching away from
+Search does not cancel a running query. To cancel it without reopening Search,
+choose **Sessions** and then **Cancel hidden search**. A saved Search tab
 reopens idle.
 
 ### Use a Search excerpt in Chat

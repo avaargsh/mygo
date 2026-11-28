@@ -142,6 +142,12 @@ func (s *shell) renderSessionManager(c *ui.Context, snapshot core.WorkspaceSnaps
 						ui.Text(c, "Hidden terminal stopping…").FontSize(fontSmall)
 					}
 				}
+				if f := s.searchSession(); f != nil && core.SessionOwner(snapshot, "search") == "" {
+					f.collect()
+					if f.pending != nil {
+						ui.Button(c.Key("cancel-hidden-search"), "Cancel hidden search").OnClick(f.stop)
+					}
+				}
 				if f := s.filesSession(); f != nil && f.browser != nil && core.SessionOwner(snapshot, "files") == "" {
 					ui.Button(c.Key("revoke-hidden-files"), "Revoke hidden folder access").OnClick(func() { s.fileResult(f.close()) })
 				}
@@ -179,9 +185,9 @@ func (s *shell) renderStatusBar(c *ui.Context, snapshot core.WorkspaceSnapshot) 
 	}
 	ui.Row(c.Key("status-bar")).Role(ui.RoleStatus).Label("Status bar").Gap(spaceControl).Padding(4).
 		Background(c.Theme().Surface).Radius(radiusPane).Children(func() {
-			ui.Text(c, message).FontSize(fontSmall).TextColor(c.Theme().TextMuted)
-			if s.status != "" {
-				ui.Text(c, s.status).FontSize(fontSmall)
-			}
-		})
+		ui.Text(c, message).FontSize(fontSmall).TextColor(c.Theme().TextMuted)
+		if s.status != "" {
+			ui.Text(c, s.status).FontSize(fontSmall)
+		}
+	})
 }

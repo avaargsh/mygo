@@ -234,10 +234,17 @@ def main():
     find("Search local documents")
     enter("Exact index name", index)
     enter("Search text", "asterquill")
-    click("Find passages")
+    keyboard = os.environ.get("MYGO_XERJ_SEARCH_KEYBOARD") == "1"
+    if keyboard:
+        if not find("Search text").getState().contains(pyatspi.STATE_FOCUSED):
+            raise RuntimeError("Cannot submit with Enter: Search text does not have focus")
+        xdotool("key", "--clearmodifiers", "Return")
+    else:
+        click("Find passages")
     find('"guide.md":1', contains=True)
     find("synthetic runbook verification marker", contains=True)
-    print(f"PASS: installed GTK Search returned the real XERJ excerpt and guide.md:1 from {index}")
+    method = "Enter" if keyboard else "Find passages"
+    print(f"PASS: installed GTK Search ({method}) returned the real XERJ excerpt and guide.md:1 from {index}")
 
 
 if __name__ == "__main__":
