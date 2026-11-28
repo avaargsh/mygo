@@ -3,6 +3,14 @@ name: Workspace Distribution
 on:
   push:
     branches: [main, test/workspace-linux-notices, test/workspace-cloud-acceptance, test/workspace-installed-search]
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/workspace-distribution.yml'
+      - 'apps/workspace/cmd/mygo/search*.go'
+      - 'apps/workspace/probe-installed-search-linux.py'
+      - 'apps/workspace/smoke-install-linux.sh'
+      - 'apps/workspace/smoke-search-xerj-linux.sh'
   workflow_dispatch:
 
 permissions:
@@ -14,8 +22,16 @@ jobs:
     timeout-minutes: 25
     env:
       GOTOOLCHAIN: local
+      MYGO_VERIFY_INSTALLED_SEARCH: ${{ github.event_name == 'pull_request' || github.ref == 'refs/heads/test/workspace-installed-search' }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Verify tested source
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
       - uses: actions/setup-go@v6
         with:
           go-version: '1.27.4'
@@ -26,7 +42,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-0 libayatana-appindicator3-1 xvfb xauth xdotool dbus-x11 libgl1-mesa-dri libglx-mesa0 libegl-mesa0
-          if [[ "$GITHUB_REF" == refs/heads/test/workspace-installed-search ]]; then
+          if [[ "$MYGO_VERIFY_INSTALLED_SEARCH" == true ]]; then
             sudo apt-get install -y --no-install-recommends at-spi2-core python3-pyatspi
           fi
           bun install --frozen-lockfile
@@ -65,7 +81,7 @@ jobs:
       - name: Verify installed user application
         run: |
           bash -n apps/workspace/smoke-install-linux.sh
-          if [[ "$GITHUB_REF" == refs/heads/test/workspace-installed-search ]]; then
+          if [[ "$MYGO_VERIFY_INSTALLED_SEARCH" == true ]]; then
             NO_AT_BRIDGE=0 xvfb-run -a dbus-run-session -- bash apps/workspace/smoke-search-xerj-linux.sh bash apps/workspace/smoke-install-linux.sh apps/workspace/cmd/mygo/dist/linux-amd64
           else
             xvfb-run -a dbus-run-session -- bash apps/workspace/smoke-install-linux.sh apps/workspace/cmd/mygo/dist/linux-amd64
@@ -78,8 +94,8 @@ jobs:
           test "$(dpkg-query -W -f='${db:Status-Status}' mygo-workspace 2>/dev/null || true)" != installed
           sudo apt-get install -y --no-install-recommends "./$deb"
           trap 'sudo apt-get remove -y mygo-workspace' EXIT
-          if [[ "$GITHUB_REF" == refs/heads/test/workspace-installed-search ]]; then
-            NO_AT_BRIDGE=0 xvfb-run -a dbus-run-session -- bash apps/workspace/smoke-search-xerj-linux.sh bash apps/workspace/smoke-install-linux.sh "${deb%/*}" --deb-installed
+          if [[ "$MYGO_VERIFY_INSTALLED_SEARCH" == true ]]; then
+            MYGO_XERJ_SEARCH_KEYBOARD=1 NO_AT_BRIDGE=0 xvfb-run -a dbus-run-session -- bash apps/workspace/smoke-search-xerj-linux.sh bash apps/workspace/smoke-install-linux.sh "${deb%/*}" --deb-installed
           else
             xvfb-run -a dbus-run-session -- bash apps/workspace/smoke-install-linux.sh "${deb%/*}" --deb-installed
           fi
