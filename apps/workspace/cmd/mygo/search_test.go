@@ -104,14 +104,23 @@ func TestWorkspaceSearchCancellationDropsLateResponse(t *testing.T) {
 	}))
 	defer server.Close()
 	f := &searchSession{endpoint: server.URL, index: "notes", query: "first"}
-	f.start(nil)
+	redraw := make(chan struct{}, 1)
+	f.start(func() {
+		select {
+		case redraw <- struct{}{}:
+		default:
+		}
+	})
 	defer f.stop()
 	wait.For(t, "request to start", received)
 	old := f.pending
 	f.stop()
-	wait.For(t, "canceled request to finish", old)
+	if f.draining != old || f.pending != nil || f.result != nil {
+		t.Fatal("cancel did not retain only the cleanup fence")
+	}
+	wait.For(t, "canceled request to notify cleanup", redraw)
 	f.collect()
-	if f.pending != nil || f.result != nil {
-		t.Fatal("canceled request repopulated the view")
+	if f.draining != nil || f.pending != nil || f.result != nil {
+		t.Fatal("canceled request did not drain or repopulated the view")
 	}
 }
